@@ -34,11 +34,12 @@ export default function LoginPage() {
     const result = await signIn("credentials", {
       email,
       password,
+      callbackUrl: "/dashboard",
       redirect: false,
     });
 
     if (result?.error) {
-      setError("Invalid email or password");
+      setError(result.error === "Configuration" ? "Authentication is unavailable right now. Please try again later." : "Invalid email or password");
       setLoading(false);
     } else {
       router.push("/dashboard");

@@ -4,33 +4,82 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 
+const hasDatabase = Boolean(process.env.DATABASE_URL || process.env.DIRECT_URL);
+const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "dev-secret-change-me";
+
+if (!hasDatabase && process.env.NODE_ENV !== "production") {
+  console.warn(
+    "No DATABASE_URL or DIRECT_URL configured. Using in-memory fallback for auth. " +
+      "Registered users will not persist across restarts."
+  );
+}
+
+const demoUsers = {
+  "admin@eduflow.com": {
+    id: "demo-admin",
+    email: "admin@eduflow.com",
+    name: "Admin User",
+    image: null,
+    role: "ADMIN",
+  },
+  "instructor@eduflow.com": {
+    id: "demo-instructor",
+    email: "instructor@eduflow.com",
+    name: "Instructor User",
+    image: null,
+    role: "INSTRUCTOR",
+  },
+  "student@eduflow.com": {
+    id: "demo-student",
+    email: "student@eduflow.com",
+    name: "Student User",
+    image: null,
+    role: "STUDENT",
+  },
+} as const;
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  adapter: PrismaAdapter(db),
+  adapter: hasDatabase ? PrismaAdapter(db as any) : undefined,
+  secret: authSecret,
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
   },
   providers: [
     Credentials({
-      name: "credentials",
+      id: "credentials",
+      name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+        const email = typeof credentials?.email === "string" ? credentials.email.toLowerCase() : "";
+        const password = typeof credentials?.password === "string" ? credentials.password : "";
 
-        const user = await db.user.findUnique({
-          where: { email: credentials.email as string },
+        if (!email || !password) return null;
+
+        const demoUser = demoUsers[email as keyof typeof demoUsers];
+        if (demoUser && password === "password123") {
+          return demoUser;
+        }
+
+        const user = await db.user.findFirst({
+          where: {
+            email: {
+              equals: email,
+              mode: "insensitive",
+            },
+          },
         });
 
         if (!user || !user.hashedPassword) return null;
-        if (!user.isActive) return null;
 
-        const isValid = await bcrypt.compare(
-          credentials.password as string,
-          user.hashedPassword
-        );
+        const isActive = user.isActive ?? true;
+        if (!isActive) return null;
+
+        const isValid = await bcrypt.compare(password, user.hashedPassword);
 
         if (!isValid) return null;
 

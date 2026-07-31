@@ -11,7 +11,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const existing = await db.user.findUnique({ where: { email } });
+    const normalizedEmail = email.toLowerCase();
+
+    const existing = await db.user.findFirst({
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: "insensitive",
+        },
+      },
+    });
     if (existing) {
       return NextResponse.json({ error: "Email already registered" }, { status: 409 });
     }
@@ -21,8 +30,9 @@ export async function POST(req: NextRequest) {
     const user = await db.user.create({
       data: {
         name,
-        email,
+        email: normalizedEmail,
         hashedPassword,
+        isActive: true,
         role: role === "INSTRUCTOR" ? "INSTRUCTOR" : "STUDENT",
       },
     });

@@ -89,10 +89,23 @@ export default async function CoursesPage({
   const price = typeof params.price === "string" ? params.price : "";
   const sort = typeof params.sort === "string" ? params.sort : "newest";
 
-  const categories: CategoryWithCount[] = await db.category.findMany({
-    include: { _count: { select: { courses: true } } },
-    orderBy: { name: "asc" },
-  });
+  let categories: CategoryWithCount[] = [];
+  let courses: CourseListItem[] = [];
+  let dataUnavailable = false;
+
+  try {
+    if (process.env.DATABASE_URL || process.env.DIRECT_URL) {
+      categories = await db.category.findMany({
+        include: { _count: { select: { courses: true } } },
+        orderBy: { name: "asc" },
+      });
+    } else {
+      dataUnavailable = true;
+    }
+  } catch (error) {
+    console.error("Failed to load course categories:", error);
+    dataUnavailable = true;
+  }
 
   // Build the where clause
   const where: Record<string, unknown> = {
@@ -140,16 +153,24 @@ export default async function CoursesPage({
       orderBy = { createdAt: "desc" };
   }
 
-  const courses: CourseListItem[] = await db.course.findMany({
-    where: where as any,
-    include: {
-      instructor: { select: { name: true, image: true } },
-      category: true,
-      reviews: { select: { rating: true } },
-      _count: { select: { enrollments: true } },
-    },
-    orderBy,
-  });
+  try {
+    if (!dataUnavailable && (process.env.DATABASE_URL || process.env.DIRECT_URL)) {
+      courses = await db.course.findMany({
+        where: where as any,
+        include: {
+          instructor: { select: { name: true, image: true } },
+          category: true,
+          reviews: { select: { rating: true } },
+          _count: { select: { enrollments: true } },
+        },
+        orderBy,
+      });
+    }
+  } catch (error) {
+    console.error("Failed to load courses:", error);
+    dataUnavailable = true;
+    courses = [];
+  }
 
   // Sort by rating in JS if needed (Prisma doesn't support aggregated sort easily)
   let sortedCourses = courses;
@@ -215,6 +236,12 @@ export default async function CoursesPage({
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {dataUnavailable && (
+          <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            Course data is temporarily unavailable because the database connection is not configured yet.
+          </div>
+        )}
+
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Sidebar Filters */}
           <aside className="lg:w-64 flex-shrink-0">

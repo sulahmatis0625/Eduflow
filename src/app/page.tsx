@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { TrialVideoModal } from "@/components/home/trial-video-modal";
+import { StatCounter } from "@/components/home/stat-counter";
 import {
   GraduationCap, PlayCircle, Award, Users, BookOpen, Star,
   ArrowRight, CheckCircle, Zap, Globe, Clock, Shield,
@@ -95,13 +97,7 @@ export default async function HomePage() {
                 Explore Courses
                 <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link
-                href="/register"
-                className="inline-flex items-center justify-center gap-2 px-8 py-3.5 border border-white/10 text-white text-sm rounded-full hover:border-white/20 transition-all duration-300"
-              >
-                <PlayCircle className="h-4 w-4" />
-                Start Free Trial
-              </Link>
+              <TrialVideoModal />
             </div>
 
             {/* Feature badges */}
@@ -127,19 +123,27 @@ export default async function HomePage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             <div>
-              <p className="font-dot text-4xl md:text-5xl text-brand">{courseCount || "500"}+</p>
+              <div className="font-dot text-4xl md:text-5xl text-brand">
+                <StatCounter value={Number(courseCount || 0)} suffix="+" />
+              </div>
               <p className="text-xs text-text-tertiary mt-2">Courses</p>
             </div>
             <div>
-              <p className="font-dot text-4xl md:text-5xl text-brand">{userCount || "50K"}+</p>
+              <div className="font-dot text-4xl md:text-5xl text-brand">
+                <StatCounter value={Number(userCount || 0)} suffix="+" />
+              </div>
               <p className="text-xs text-text-tertiary mt-2">Students</p>
             </div>
             <div>
-              <p className="font-dot text-4xl md:text-5xl text-gold">{certificateCount || "25K"}+</p>
+              <div className="font-dot text-4xl md:text-5xl text-gold">
+                <StatCounter value={Number(certificateCount || 0)} suffix="+" />
+              </div>
               <p className="text-xs text-text-tertiary mt-2">Certificates Issued</p>
             </div>
             <div>
-              <p className="font-dot text-4xl md:text-5xl text-gold">4.8</p>
+              <div className="font-dot text-4xl md:text-5xl text-gold">
+                <StatCounter value={4.8} decimals={1} />
+              </div>
               <p className="text-xs text-text-tertiary mt-2">Average Rating</p>
             </div>
           </div>

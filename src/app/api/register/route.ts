@@ -2,6 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 
+export async function GET() {
+  try {
+    const [activeStudents, publishedCourses, instructors, satisfaction] = await Promise.all([
+      db.user.count({ where: { role: "STUDENT", isActive: true } }).catch(() => 0),
+      db.course.count({ where: { status: "PUBLISHED" } }).catch(() => 0),
+      db.user.count({ where: { role: "INSTRUCTOR" } }).catch(() => 0),
+      Promise.resolve(95),
+    ]);
+
+    return NextResponse.json({
+      activeStudents,
+      courses: publishedCourses,
+      instructors,
+      satisfaction,
+    });
+  } catch (error) {
+    console.error("Platform stats error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();

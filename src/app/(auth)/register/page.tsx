@@ -14,12 +14,9 @@ import {
   EyeOff,
   BookOpen,
   Briefcase,
-  Users,
-  Award,
-  BarChart3,
-  Heart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PlatformStats } from "@/components/home/platform-stats";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -92,50 +89,13 @@ export default function RegisterPage() {
           <h2 className="text-4xl font-bold mb-4">
             <span className="gradient-text">Join EduFlow</span>
           </h2>
-          <p className="text-text-secondary text-lg mb-10 leading-relaxed">
+          <p className="text-white/90 text-lg mb-10 leading-relaxed">
             Create your account and start learning from industry experts. Your
             journey to mastery begins here.
           </p>
 
           {/* Stats grid with glass cards */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white/[0.03] border border-white/[0.06] backdrop-blur rounded-xl p-5 group hover:border-brand/20 transition-colors">
-              <div className="flex items-center gap-2 mb-2">
-                <Users className="h-4 w-4 text-brand" />
-              </div>
-              <p className="text-3xl font-bold text-white mb-1">50K+</p>
-              <p className="text-sm text-text-secondary">
-                Active Students
-              </p>
-            </div>
-            <div className="bg-white/[0.03] border border-white/[0.06] backdrop-blur rounded-xl p-5 group hover:border-brand/20 transition-colors">
-              <div className="flex items-center gap-2 mb-2">
-                <BookOpen className="h-4 w-4 text-brand" />
-              </div>
-              <p className="text-3xl font-bold text-white mb-1">500+</p>
-              <p className="text-sm text-text-secondary">
-                Courses
-              </p>
-            </div>
-            <div className="bg-white/[0.03] border border-white/[0.06] backdrop-blur rounded-xl p-5 group hover:border-brand/20 transition-colors">
-              <div className="flex items-center gap-2 mb-2">
-                <Award className="h-4 w-4 text-brand" />
-              </div>
-              <p className="text-3xl font-bold text-white mb-1">200+</p>
-              <p className="text-sm text-text-secondary">
-                Instructors
-              </p>
-            </div>
-            <div className="bg-white/[0.03] border border-white/[0.06] backdrop-blur rounded-xl p-5 group hover:border-brand/20 transition-colors">
-              <div className="flex items-center gap-2 mb-2">
-                <Heart className="h-4 w-4 text-brand" />
-              </div>
-              <p className="text-3xl font-bold text-white mb-1">95%</p>
-              <p className="text-sm text-text-secondary">
-                Satisfaction
-              </p>
-            </div>
-          </div>
+          <PlatformStats />
 
           {/* Decorative glow orbs */}
           <div className="absolute -bottom-20 -left-20 w-60 h-60 rounded-full bg-brand/[0.04] blur-3xl" />
@@ -162,7 +122,7 @@ export default function RegisterPage() {
           <h1 className="text-3xl font-bold text-white mb-2">
             Create your account
           </h1>
-          <p className="text-text-secondary mb-8">
+          <p className="text-white/85 mb-8">
             {step === 1
               ? "Choose how you want to use EduFlow"
               : "Fill in your details to get started"}
@@ -229,7 +189,7 @@ export default function RegisterPage() {
                   <p className="font-semibold text-white mb-0.5">
                     I want to teach
                   </p>
-                  <p className="text-sm text-white/40">
+                  <p className="text-sm text-white/75">
                     Create courses, reach students, and share knowledge
                   </p>
                 </div>
@@ -269,7 +229,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-[38px] text-white/40 hover:text-white/60 transition-colors"
+                  className="absolute right-3 top-[38px] text-white/75 hover:text-white transition-colors"
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4" />

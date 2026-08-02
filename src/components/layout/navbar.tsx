@@ -1,19 +1,36 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import {
   GraduationCap, Menu, X, Search, Bell, BookOpen,
   LayoutDashboard, Trophy, LogOut, Settings, Shield,
-  ChevronDown,
+  ChevronDown, ArrowLeft, ArrowRight,
 } from "lucide-react";
 
 export function Navbar() {
+  const router = useRouter();
   const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(true);
+  const [canGoForward, setCanGoForward] = useState(false);
+
+  useEffect(() => {
+    const updateNavigationState = () => {
+      const currentIndex = window.history.state?.idx ?? 0;
+      setCanGoBack(currentIndex > 0 || document.referrer !== "");
+      setCanGoForward(currentIndex < window.history.length - 1);
+    };
+
+    updateNavigationState();
+    window.addEventListener("popstate", updateNavigationState);
+
+    return () => window.removeEventListener("popstate", updateNavigationState);
+  }, []);
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-surface-0/80 backdrop-blur-xl border-b border-white/[0.06]">
@@ -31,7 +48,7 @@ export function Navbar() {
           </Link>
 
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="hidden md:flex items-center gap-4">
             <Link href="/courses" className="text-sm text-text-secondary hover:text-white transition-colors duration-200">
               Courses
             </Link>
@@ -47,6 +64,33 @@ export function Navbar() {
 
           {/* Right Side */}
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] p-1 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.history.length > 1) {
+                    router.back();
+                  } else {
+                    router.push("/");
+                  }
+                }}
+                disabled={!canGoBack}
+                aria-label="Go back"
+                className="group rounded-full p-2 text-text-secondary transition-all duration-300 hover:text-white hover:bg-brand/10 hover:shadow-[0_0_12px_rgba(0,255,204,0.15)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ArrowLeft className="h-4 w-4 transition-transform duration-300 group-hover:-translate-x-0.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => router.forward()}
+                disabled={!canGoForward}
+                aria-label="Go forward"
+                className="group rounded-full p-2 text-text-secondary transition-all duration-300 hover:text-white hover:bg-brand/10 hover:shadow-[0_0_12px_rgba(0,255,204,0.15)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" />
+              </button>
+            </div>
+
             {session ? (
               <>
                 <Link href="/courses" className="hidden md:flex p-2 text-text-tertiary hover:text-brand rounded-lg hover:bg-white/[0.03] transition-colors">

@@ -13,12 +13,12 @@
   --color-surface-4: #2a3a4a;
   --color-glass: rgba(255, 255, 255, 0.03);
   --color-glass-hover: rgba(255, 255, 255, 0.06);
-  --color-glass-border: rgba(255, 255, 255, 0.08);
-  --color-glass-border-hover: rgba(255, 255, 255, 0.12);
+  --color-glass-border: rgba(255, 255, 255, 0.16);
+  --color-glass-border-hover: rgba(255, 255, 255, 0.24);
   --color-text-primary: #f0f6fc;
-  --color-text-secondary: rgba(240, 246, 252, 0.75);
-  --color-text-tertiary: rgba(240, 246, 252, 0.55);
-  --color-text-muted: rgba(240, 246, 252, 0.35);
+  --color-text-secondary: rgba(240, 246, 252, 0.86);
+  --color-text-tertiary: rgba(240, 246, 252, 0.72);
+  --color-text-muted: rgba(240, 246, 252, 0.56);
   --font-sans: 'Doto', system-ui, sans-serif;
   --font-mono: 'Doto', ui-monospace, monospace;
   --font-display: 'Doto', monospace;
@@ -26,7 +26,7 @@
 
 @layer base {
   * {
-    border-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.16);
   }
 
   html {
@@ -45,6 +45,22 @@
     background: rgba(0, 255, 204, 0.2);
     color: #fff;
   }
+}
+
+.border-white\/\[0\.06\] {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+.border-white\/\[0\.08\] {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.divide-white\/\[0\.06\] {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+.divide-white\/\[0\.08\] {
+  border-color: rgba(255, 255, 255, 0.2) !important;
 }
 
 /* Custom scrollbar */

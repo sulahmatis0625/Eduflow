@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Menu } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const COLLAPSE_KEY = "eduflow-sidebar-collapsed";
 
 export default function DashboardLayout({
   children,
@@ -10,12 +13,37 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleCollapse = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-surface-0">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        collapsed={collapsed}
+        onToggleCollapse={toggleCollapse}
+      />
 
-      {/* Mobile menu button */}
       <div className="lg:hidden fixed top-[4.5rem] left-4 z-30">
         <button
           onClick={() => setSidebarOpen(true)}
@@ -26,8 +54,12 @@ export default function DashboardLayout({
         </button>
       </div>
 
-      {/* Main content */}
-      <main className="lg:pl-64 pt-6 pb-12">
+      <main
+        className={cn(
+          "pt-6 pb-12 transition-all duration-300",
+          collapsed ? "lg:pl-16" : "lg:pl-64"
+        )}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {children}
         </div>

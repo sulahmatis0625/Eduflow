@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { signIn } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,9 +19,11 @@ import {
 import { cn } from "@/lib/utils";
 import { PlatformStats } from "@/components/home/platform-stats";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
+  const searchParams = useSearchParams();
+  const isTrial = searchParams.get("trial") === "1";
+  const [step, setStep] = useState(isTrial ? 2 : 1);
   const [role, setRole] = useState("STUDENT");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -50,7 +53,13 @@ export default function RegisterPage() {
       const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, role }),
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          role: isTrial ? "STUDENT" : role,
+          trial: isTrial,
+        }),
       });
 
       const data = await res.json();
@@ -61,7 +70,34 @@ export default function RegisterPage() {
         return;
       }
 
-      router.push("/login?registered=true");
+      // Sign in immediately so the free course shows in My Courses without a second form
+      const signInResult = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (signInResult?.error) {
+        // Account exists — fall back to login with trial flag
+        router.push(
+          isTrial
+            ? "/login?registered=true&trial=1"
+            : "/login?registered=true"
+        );
+        return;
+      }
+
+      if (isTrial) {
+        try {
+          await fetch("/api/enroll/free-trial", { method: "POST" });
+        } catch {
+          // Register API already enrolled; this is a safety net
+        }
+        router.push("/dashboard/courses");
+      } else {
+        router.push("/dashboard");
+      }
+      router.refresh();
     } catch {
       setError("Something went wrong");
       setLoading(false);
@@ -70,12 +106,8 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen flex bg-surface-0 dot-grid">
-      {/* Left Panel - Decorative */}
       <div className="hidden lg:flex flex-1 bg-surface-1 items-center justify-center p-12 relative overflow-hidden">
-        {/* Brand radial glow */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,255,204,0.05)_0%,_transparent_70%)]" />
-
-        {/* Subtle grid overlay */}
         <div
           className="absolute inset-0 opacity-[0.03]"
           style={{
@@ -87,26 +119,23 @@ export default function RegisterPage() {
 
         <div className="max-w-md relative z-10">
           <h2 className="text-4xl font-bold mb-4">
-            <span className="gradient-text">Join EduFlow</span>
+            <span className="gradient-text">
+              {isTrial ? "Start your free trial" : "Join EduFlow"}
+            </span>
           </h2>
           <p className="text-white/90 text-lg mb-10 leading-relaxed">
-            Create your account and start learning from industry experts. Your
-            journey to mastery begins here.
+            {isTrial
+              ? "Create your student account and we’ll add the free starter course to My Courses automatically."
+              : "Create your account and start learning from industry experts. Your journey to mastery begins here."}
           </p>
-
-          {/* Stats grid with glass cards */}
           <PlatformStats />
-
-          {/* Decorative glow orbs */}
           <div className="absolute -bottom-20 -left-20 w-60 h-60 rounded-full bg-brand/[0.04] blur-3xl" />
           <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full bg-purple-500/[0.04] blur-3xl" />
         </div>
       </div>
 
-      {/* Right Panel - Form */}
       <div className="flex-1 flex items-center justify-center p-8 relative z-10">
         <div className="w-full max-w-md">
-          {/* Logo */}
           <Link href="/" className="flex items-center gap-3 mb-10">
             <div className="relative">
               <div className="bg-brand/10 border border-brand/20 p-2.5 rounded-xl">
@@ -118,42 +147,42 @@ export default function RegisterPage() {
             </span>
           </Link>
 
-          {/* Heading */}
           <h1 className="text-3xl font-bold text-white mb-2">
-            Create your account
+            {isTrial ? "Free trial sign up" : "Create your account"}
           </h1>
           <p className="text-white/85 mb-8">
-            {step === 1
-              ? "Choose how you want to use EduFlow"
-              : "Fill in your details to get started"}
+            {isTrial
+              ? "Fill in your details to unlock your free course"
+              : step === 1
+                ? "Choose how you want to use EduFlow"
+                : "Fill in your details to get started"}
           </p>
 
-          {/* Step indicator */}
-          <div className="flex items-center gap-2 mb-8">
-            <div
-              className={cn(
-                "h-1 flex-1 rounded-full transition-colors duration-300",
-                step >= 1 ? "bg-brand" : "bg-white/[0.08]"
-              )}
-            />
-            <div
-              className={cn(
-                "h-1 flex-1 rounded-full transition-colors duration-300",
-                step >= 2 ? "bg-brand" : "bg-white/[0.08]"
-              )}
-            />
-          </div>
+          {!isTrial && (
+            <div className="flex items-center gap-2 mb-8">
+              <div
+                className={cn(
+                  "h-1 flex-1 rounded-full transition-colors duration-300",
+                  step >= 1 ? "bg-brand" : "bg-white/[0.08]"
+                )}
+              />
+              <div
+                className={cn(
+                  "h-1 flex-1 rounded-full transition-colors duration-300",
+                  step >= 2 ? "bg-brand" : "bg-white/[0.08]"
+                )}
+              />
+            </div>
+          )}
 
-          {/* Error */}
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
               {error}
             </div>
           )}
 
-          {step === 1 ? (
+          {step === 1 && !isTrial ? (
             <div className="space-y-4">
-              {/* Student card */}
               <button
                 onClick={() => {
                   setRole("STUDENT");
@@ -174,7 +203,6 @@ export default function RegisterPage() {
                 </div>
               </button>
 
-              {/* Instructor card */}
               <button
                 onClick={() => {
                   setRole("INSTRUCTOR");
@@ -250,31 +278,30 @@ export default function RegisterPage() {
               />
 
               <div className="flex gap-3 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setStep(1)}
-                  className="flex-1"
-                >
-                  Back
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1"
-                  isLoading={loading}
-                >
-                  Create Account
+                {!isTrial && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setStep(1)}
+                    className="flex-1"
+                  >
+                    Back
+                  </Button>
+                )}
+                <Button type="submit" className="flex-1" isLoading={loading}>
+                  {isTrial
+                    ? "Create account & get free course"
+                    : "Create Account"}
                 </Button>
               </div>
             </form>
           )}
 
-          {/* Sign in link */}
           <div className="mt-6 text-center">
             <p className="text-sm text-white/40">
               Already have an account?{" "}
               <Link
-                href="/login"
+                href={isTrial ? "/login?trial=1" : "/login"}
                 className="text-brand hover:text-brand/80 font-medium transition-colors"
               >
                 Sign in
@@ -284,5 +311,19 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-surface-0">
+          <div className="animate-spin h-8 w-8 border-2 border-brand border-t-transparent rounded-full" />
+        </div>
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   );
 }

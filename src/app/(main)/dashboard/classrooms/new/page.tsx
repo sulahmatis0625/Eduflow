@@ -1,14 +1,79 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { ArrowLeft, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { LessonVideoPlayer } from "@/components/course/lesson-video-player";
+import { useToast } from "@/components/ui/toast";
+import {
+  QuizQuestionEditor,
+  EMPTY_QUESTION,
+  validateQuizQuestions,
+  serializeQuizQuestions,
+  type QuizQuestionDraft,
+} from "@/components/dashboard/quiz-question-editor";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  FolderPlus,
+  Link2,
+  Loader2,
+  PlayCircle,
+  Scissors,
+  Trash2,
+  Video,
+  BookOpen,
+  Rocket,
+  HelpCircle,
+  Award,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+
+type AssessmentDraft = {
+  enabled: boolean;
+  expanded: boolean;
+  title: string;
+  passingScore: string;
+  maxAttempts: string;
+  timeLimit: string;
+  questions: QuizQuestionDraft[];
+};
+
+function emptyAssessment(title: string): AssessmentDraft {
+  return {
+    enabled: false,
+    expanded: false,
+    title,
+    passingScore: "50",
+    maxAttempts: "3",
+    timeLimit: "",
+    questions: [{ ...EMPTY_QUESTION }],
+  };
+}
+
+type PlaylistVideo = {
+  videoId: string;
+  title: string;
+  description: string;
+  thumbnail: string | null;
+  url: string;
+  durationMinutes: number;
+  position: number;
+};
+
+type Chapter = {
+  id: string;
+  title: string;
+  lessons: PlaylistVideo[];
+};
 
 const levelOptions = [
   { value: "BEGINNER", label: "Beginner" },
@@ -16,65 +81,526 @@ const levelOptions = [
   { value: "ADVANCED", label: "Advanced" },
 ];
 
-export default function NewClassroomPage() {
-  const router = useRouter();
-  const [submitting, setSubmitting] = useState(false);
+const STEPS = [
+  { id: 1, label: "Course info" },
+  { id: 2, label: "YouTube playlist" },
+  { id: 3, label: "Chapters & preview" },
+  { id: 4, label: "Assessments" },
+  { id: 5, label: "Publish" },
+];
+
+function newChapterId() {
+  return `ch_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export default function CreateCourseWizardPage() {
+  const { toast } = useToast();
+
+  const [step, setStep] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
   const [form, setForm] = useState({
     title: "",
     shortDescription: "",
     description: "",
     level: "BEGINNER",
+    isFree: true,
+    price: "0",
+    tags: "",
   });
+
+  const [playlistUrl, setPlaylistUrl] = useState("");
+  const [playlistMeta, setPlaylistMeta] = useState<{
+    title: string;
+    description: string;
+    thumbnail: string | null;
+  } | null>(null);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [previewKey, setPreviewKey] = useState<{ chapterId: string; videoId: string } | null>(
+    null
+  );
+
+  const [courseId, setCourseId] = useState<string | null>(null);
+  const [courseSlug, setCourseSlug] = useState<string | null>(null);
+
+  /** Per-chapter assessment drafts keyed by chapter id; plus final exam. */
+  const [chapterAssessments, setChapterAssessments] = useState<
+    Record<string, AssessmentDraft>
+  >({});
+  const [finalAssessment, setFinalAssessment] = useState<AssessmentDraft>(
+    emptyAssessment("Final Exam")
+  );
+
+  const flatLessons = useMemo(
+    () => chapters.flatMap((ch) => ch.lessons),
+    [chapters]
+  );
+
+  const previewVideo = useMemo(() => {
+    if (!previewKey) return flatLessons[0] || null;
+    const ch = chapters.find((c) => c.id === previewKey.chapterId);
+    return ch?.lessons.find((l) => l.videoId === previewKey.videoId) || flatLessons[0] || null;
+  }, [previewKey, chapters, flatLessons]);
+
+  const totalDuration = useMemo(
+    () => flatLessons.reduce((sum, v) => sum + (v.durationMinutes || 0), 0),
+    [flatLessons]
+  );
 
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
     >
   ) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value, type } = e.target;
+    const checked = (e.target as HTMLInputElement).checked;
+    setForm((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  const ensureDraftCourse = async () => {
+    if (courseId) return courseId;
 
+    const res = await fetch("/api/courses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: form.title.trim(),
+        shortDescription:
+          form.shortDescription.trim() || form.description.trim().slice(0, 140),
+        description: form.description.trim(),
+        level: form.level,
+        isFree: form.isFree,
+        price: form.isFree ? 0 : form.price,
+        tags: form.tags.trim() || undefined,
+        status: "DRAFT",
+        currency: "ETB",
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to create course");
+
+    setCourseId(data.id);
+    setCourseSlug(data.slug);
+    return data.id as string;
+  };
+
+  const goStep1Next = async () => {
+    setError(null);
     if (!form.title.trim() || !form.description.trim()) {
       setError("Title and description are required.");
       return;
     }
-
-    setSubmitting(true);
+    setBusy(true);
     try {
-      const res = await fetch("/api/courses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: form.title,
-          shortDescription: form.shortDescription,
-          description: form.description,
-          level: form.level,
-          isFree: true,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || "Failed to create classroom.");
-        setSubmitting(false);
-        return;
-      }
-
-      router.push("/dashboard");
-      router.refresh();
-    } catch {
-      setError("Something went wrong. Please try again.");
-      setSubmitting(false);
+      await ensureDraftCourse();
+      setStep(2);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save course");
+    } finally {
+      setBusy(false);
     }
   };
 
+  const importPlaylist = async () => {
+    setError(null);
+    if (!playlistUrl.trim()) {
+      setError("Paste a YouTube playlist URL first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/youtube/playlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: playlistUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Import failed");
+
+      const videos = (data.videos || []) as PlaylistVideo[];
+      setPlaylistMeta({
+        title: data.title,
+        description: data.description,
+        thumbnail: data.thumbnail,
+      });
+
+      // Start with one chapter — instructor can split/group as needed
+      const initial: Chapter[] = [
+        {
+          id: newChapterId(),
+          title: "Chapter 1",
+          lessons: videos,
+        },
+      ];
+      setChapters(initial);
+      if (videos[0]) {
+        setPreviewKey({ chapterId: initial[0].id, videoId: videos[0].videoId });
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        title: prev.title || data.title || prev.title,
+        shortDescription:
+          prev.shortDescription ||
+          (data.description || "").slice(0, 140) ||
+          prev.shortDescription,
+        description:
+          prev.description.length > 20
+            ? prev.description
+            : data.description || prev.description || data.title,
+      }));
+
+      toast("success", `Imported ${videos.length} videos — organize into chapters`);
+      setStep(3);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import playlist");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renameChapter = (chapterId: string, title: string) => {
+    setChapters((prev) =>
+      prev.map((ch) => (ch.id === chapterId ? { ...ch, title } : ch))
+    );
+  };
+
+  const addEmptyChapter = () => {
+    setChapters((prev) => [
+      ...prev,
+      { id: newChapterId(), title: `Chapter ${prev.length + 1}`, lessons: [] },
+    ]);
+  };
+
+  const removeChapter = (chapterId: string) => {
+    setChapters((prev) => {
+      if (prev.length <= 1) return prev;
+      const idx = prev.findIndex((c) => c.id === chapterId);
+      if (idx < 0) return prev;
+      const orphaned = prev[idx].lessons;
+      const next = prev.filter((c) => c.id !== chapterId);
+      // Move orphaned lessons into previous chapter (or first)
+      const targetIdx = Math.max(0, idx - 1);
+      next[targetIdx] = {
+        ...next[targetIdx],
+        lessons: [...next[targetIdx].lessons, ...orphaned],
+      };
+      return next;
+    });
+  };
+
+  /** Split: lessons from this index onward become a new chapter below */
+  const splitChapterAt = (chapterId: string, lessonIndex: number) => {
+    if (lessonIndex <= 0) return;
+    setChapters((prev) => {
+      const idx = prev.findIndex((c) => c.id === chapterId);
+      if (idx < 0) return prev;
+      const ch = prev[idx];
+      const keep = ch.lessons.slice(0, lessonIndex);
+      const move = ch.lessons.slice(lessonIndex);
+      if (move.length === 0) return prev;
+      const newCh: Chapter = {
+        id: newChapterId(),
+        title: `Chapter ${idx + 2}`,
+        lessons: move,
+      };
+      const next = [...prev];
+      next[idx] = { ...ch, lessons: keep };
+      next.splice(idx + 1, 0, newCh);
+      // Renumber default titles that still look like "Chapter N"
+      return next.map((c, i) =>
+        /^Chapter \d+$/i.test(c.title) ? { ...c, title: `Chapter ${i + 1}` } : c
+      );
+    });
+  };
+
+  const removeLesson = (chapterId: string, videoId: string) => {
+    setChapters((prev) =>
+      prev
+        .map((ch) =>
+          ch.id === chapterId
+            ? { ...ch, lessons: ch.lessons.filter((l) => l.videoId !== videoId) }
+            : ch
+        )
+        .filter((ch) => ch.lessons.length > 0 || prev.length === 1)
+    );
+  };
+
+  const moveLesson = (
+    chapterId: string,
+    lessonIndex: number,
+    direction: "up" | "down"
+  ) => {
+    setChapters((prev) => {
+      const ci = prev.findIndex((c) => c.id === chapterId);
+      if (ci < 0) return prev;
+      const ch = prev[ci];
+      const nextIdx = direction === "up" ? lessonIndex - 1 : lessonIndex + 1;
+
+      // Move within same chapter
+      if (nextIdx >= 0 && nextIdx < ch.lessons.length) {
+        const lessons = [...ch.lessons];
+        const [item] = lessons.splice(lessonIndex, 1);
+        lessons.splice(nextIdx, 0, item);
+        const next = [...prev];
+        next[ci] = { ...ch, lessons };
+        return next;
+      }
+
+      // Move to previous chapter (end)
+      if (direction === "up" && ci > 0) {
+        const lessons = [...ch.lessons];
+        const [item] = lessons.splice(lessonIndex, 1);
+        const next = [...prev];
+        next[ci] = { ...ch, lessons };
+        next[ci - 1] = {
+          ...next[ci - 1],
+          lessons: [...next[ci - 1].lessons, item],
+        };
+        // Drop empty chapter
+        return next.filter((c) => c.lessons.length > 0);
+      }
+
+      // Move to next chapter (start)
+      if (direction === "down" && ci < prev.length - 1) {
+        const lessons = [...ch.lessons];
+        const [item] = lessons.splice(lessonIndex, 1);
+        const next = [...prev];
+        next[ci] = { ...ch, lessons };
+        next[ci + 1] = {
+          ...next[ci + 1],
+          lessons: [item, ...next[ci + 1].lessons],
+        };
+        return next.filter((c) => c.lessons.length > 0);
+      }
+
+      return prev;
+    });
+  };
+
+  const moveLessonToChapter = (
+    fromChapterId: string,
+    videoId: string,
+    toChapterId: string
+  ) => {
+    if (fromChapterId === toChapterId) return;
+    setChapters((prev) => {
+      let moving: PlaylistVideo | null = null;
+      const stripped = prev.map((ch) => {
+        if (ch.id !== fromChapterId) return ch;
+        const lesson = ch.lessons.find((l) => l.videoId === videoId);
+        if (lesson) moving = lesson;
+        return { ...ch, lessons: ch.lessons.filter((l) => l.videoId !== videoId) };
+      });
+      if (!moving) return prev;
+      return stripped
+        .map((ch) =>
+          ch.id === toChapterId
+            ? { ...ch, lessons: [...ch.lessons, moving!] }
+            : ch
+        )
+        .filter((ch) => ch.lessons.length > 0);
+    });
+  };
+
+  const goToAssessments = () => {
+    setError(null);
+    const nonEmpty = chapters.filter((c) => c.lessons.length > 0);
+    if (nonEmpty.length === 0) {
+      setError("Add at least one lesson before continuing.");
+      return;
+    }
+    setChapterAssessments((prev) => {
+      const next: Record<string, AssessmentDraft> = {};
+      nonEmpty.forEach((ch, i) => {
+        next[ch.id] =
+          prev[ch.id] ||
+          emptyAssessment(`Chapter ${i + 1} Quiz`);
+        if (!prev[ch.id]) {
+          next[ch.id].title = `${ch.title} Quiz`;
+        }
+      });
+      return next;
+    });
+    setStep(4);
+  };
+
+  const updateChapterAssessment = (
+    chapterId: string,
+    patch: Partial<AssessmentDraft>
+  ) => {
+    setChapterAssessments((prev) => ({
+      ...prev,
+      [chapterId]: { ...prev[chapterId], ...patch },
+    }));
+  };
+
+  const validateEnabledAssessments = (): string | null => {
+    const nonEmpty = chapters.filter((c) => c.lessons.length > 0);
+    for (let i = 0; i < nonEmpty.length; i++) {
+      const ch = nonEmpty[i];
+      const draft = chapterAssessments[ch.id];
+      if (!draft?.enabled) continue;
+      if (!draft.title.trim()) {
+        return `Chapter ${i + 1} quiz needs a title.`;
+      }
+      const qErr = validateQuizQuestions(draft.questions);
+      if (qErr) return `Chapter ${i + 1}: ${qErr}`;
+    }
+    if (finalAssessment.enabled) {
+      if (!finalAssessment.title.trim()) {
+        return "Final exam needs a title.";
+      }
+      const qErr = validateQuizQuestions(finalAssessment.questions);
+      if (qErr) return `Final exam: ${qErr}`;
+    }
+    return null;
+  };
+
+  const publishCourse = async (opts?: { skipAssessments?: boolean }) => {
+    setError(null);
+    const nonEmpty = chapters.filter((c) => c.lessons.length > 0);
+    if (nonEmpty.length === 0) {
+      setError("Add at least one lesson before publishing.");
+      return;
+    }
+
+    const skipAssessments = Boolean(opts?.skipAssessments);
+    if (!skipAssessments) {
+      const assessmentError = validateEnabledAssessments();
+      if (assessmentError) {
+        setError(assessmentError);
+        return;
+      }
+    }
+
+    setBusy(true);
+    try {
+      const id = await ensureDraftCourse();
+      const first = nonEmpty[0].lessons[0];
+
+      await fetch(`/api/courses/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          shortDescription:
+            form.shortDescription.trim() ||
+            form.description.trim().slice(0, 140),
+          description: form.description.trim(),
+          level: form.level,
+          isFree: form.isFree,
+          price: form.isFree ? 0 : form.price,
+          tags: form.tags.trim() || undefined,
+          thumbnail: playlistMeta?.thumbnail || first?.thumbnail,
+          previewVideo: first?.url,
+        }),
+      });
+
+      const importRes = await fetch(`/api/classrooms/${id}/import-playlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chapters: nonEmpty.map((ch) => ({
+            title: ch.title,
+            lessons: ch.lessons,
+          })),
+          thumbnail: playlistMeta?.thumbnail || first?.thumbnail,
+          replaceExisting: true,
+        }),
+      });
+      const importData = await importRes.json();
+      if (!importRes.ok) {
+        throw new Error(importData.error || "Failed to import lessons");
+      }
+
+      // Create enabled chapter quizzes + final (section order matches import: 1..N)
+      if (!skipAssessments) {
+        for (let i = 0; i < nonEmpty.length; i++) {
+          const ch = nonEmpty[i];
+          const draft = chapterAssessments[ch.id];
+          if (!draft?.enabled) continue;
+          const quizRes = await fetch(`/api/classrooms/${id}/quizzes`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: draft.title.trim(),
+              sectionOrder: i + 1,
+              passingScore: draft.passingScore
+                ? parseFloat(draft.passingScore)
+                : 50,
+              maxAttempts: draft.maxAttempts
+                ? parseInt(draft.maxAttempts, 10)
+                : 3,
+              timeLimit: draft.timeLimit
+                ? parseInt(draft.timeLimit, 10)
+                : undefined,
+              questions: serializeQuizQuestions(draft.questions),
+            }),
+          });
+          if (!quizRes.ok) {
+            const data = await quizRes.json();
+            throw new Error(
+              data.error || `Failed to create quiz for chapter ${i + 1}`
+            );
+          }
+        }
+
+        if (finalAssessment.enabled) {
+          const quizRes = await fetch(`/api/classrooms/${id}/quizzes`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: finalAssessment.title.trim() || "Final Exam",
+              isFinal: true,
+              passingScore: finalAssessment.passingScore
+                ? parseFloat(finalAssessment.passingScore)
+                : 50,
+              maxAttempts: finalAssessment.maxAttempts
+                ? parseInt(finalAssessment.maxAttempts, 10)
+                : 3,
+              timeLimit: finalAssessment.timeLimit
+                ? parseInt(finalAssessment.timeLimit, 10)
+                : undefined,
+              questions: serializeQuizQuestions(finalAssessment.questions),
+            }),
+          });
+          if (!quizRes.ok) {
+            const data = await quizRes.json();
+            throw new Error(data.error || "Failed to create final exam");
+          }
+        }
+      }
+
+      const pubRes = await fetch(`/api/courses/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "PUBLISHED" }),
+      });
+      const pubData = await pubRes.json();
+      if (!pubRes.ok) {
+        throw new Error(pubData.error || "Failed to publish");
+      }
+
+      setCourseSlug(pubData.slug || courseSlug);
+      toast("success", "Course published! Students can find it now.");
+      setStep(5);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Publish failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  let lessonCounter = 0;
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       <Link
         href="/dashboard"
         className="inline-flex items-center gap-1 text-sm text-text-tertiary hover:text-text-secondary"
@@ -84,73 +610,666 @@ export default function NewClassroomPage() {
       </Link>
 
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">
-          Create a Classroom
-        </h1>
+        <h1 className="text-2xl font-bold text-text-primary">Create Course</h1>
         <p className="text-text-secondary mt-1">
-          Give your classroom a name and short description. You can add sections
-          and lessons later.
+          Build a course from a YouTube playlist, group lessons into chapters, and publish.
         </p>
       </div>
 
-      <Card>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        {STEPS.map((s) => (
+          <div
+            key={s.id}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border",
+              step === s.id
+                ? "bg-brand/15 text-brand border-brand/30"
+                : step > s.id
+                  ? "bg-white/[0.04] text-text-secondary border-white/[0.08]"
+                  : "text-text-muted border-white/[0.06]"
+            )}
+          >
+            <span
+              className={cn(
+                "h-5 w-5 rounded-full flex items-center justify-center text-[10px]",
+                step > s.id ? "bg-brand text-surface-0" : "bg-white/10"
+              )}
+            >
+              {step > s.id ? <Check className="h-3 w-3" /> : s.id}
+            </span>
+            {s.label}
+          </div>
+        ))}
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
+      {step === 1 && (
+        <Card>
+          <CardContent className="space-y-5 pt-6">
             <Input
-              label="Classroom name"
+              label="Course title"
               name="title"
-              placeholder="e.g. Algebra 101"
+              placeholder="e.g. Front End Developer Learning Path"
               value={form.title}
               onChange={handleChange}
               required
             />
-
             <Input
               label="Short description"
               name="shortDescription"
-              placeholder="One-line summary for students"
+              placeholder="One-line summary for course cards"
               value={form.shortDescription}
               onChange={handleChange}
             />
-
             <Textarea
-              label="Description"
+              label="Full description"
               name="description"
-              placeholder="What will students learn in this classroom?"
+              placeholder="What will students learn?"
               value={form.description}
               onChange={handleChange}
               rows={5}
               required
             />
-
-            <Select
-              label="Level"
-              name="level"
-              options={levelOptions}
-              value={form.level}
-              onChange={handleChange}
-            />
-
-            {error && (
-              <p className="text-sm text-red-400" role="alert">
-                {error}
-              </p>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Select
+                label="Level"
+                name="level"
+                options={levelOptions}
+                value={form.level}
+                onChange={handleChange}
+              />
+              <Input
+                label="Tags (comma separated)"
+                name="tags"
+                placeholder="html, css, javascript"
+                value={form.tags}
+                onChange={handleChange}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+              <input
+                type="checkbox"
+                name="isFree"
+                checked={form.isFree}
+                onChange={handleChange}
+                className="rounded border-white/20"
+              />
+              Free course (students can enroll without payment)
+            </label>
+            {!form.isFree && (
+              <Input
+                label="Price (ETB)"
+                name="price"
+                type="number"
+                min="0"
+                value={form.price}
+                onChange={handleChange}
+              />
             )}
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <Link href="/dashboard">
-                <Button type="button" variant="ghost">
-                  Cancel
-                </Button>
-              </Link>
-              <Button type="submit" isLoading={submitting} disabled={submitting}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Classroom
+            <div className="flex justify-end pt-2">
+              <Button onClick={goStep1Next} isLoading={busy}>
+                Continue
+                <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             </div>
-          </form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {step === 2 && (
+        <Card>
+          <CardContent className="space-y-5 pt-6">
+            <div className="rounded-xl border border-brand/20 bg-brand/5 p-4 flex gap-3">
+              <Video className="h-6 w-6 text-brand shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">
+                  Paste a public YouTube playlist URL
+                </p>
+                <p className="text-xs text-text-secondary mt-1">
+                  Use the <strong className="text-text-primary">playlist</strong> link
+                  (must contain <code className="text-brand">list=PL...</code>), not a single video.
+                  Open the playlist on YouTube → copy the address bar URL.
+                </p>
+              </div>
+            </div>
+            <Input
+              label="YouTube playlist URL"
+              name="playlistUrl"
+              placeholder="https://www.youtube.com/playlist?list=..."
+              value={playlistUrl}
+              onChange={(e) => setPlaylistUrl(e.target.value)}
+            />
+            <div className="flex justify-between gap-3 pt-2">
+              <Button variant="ghost" onClick={() => setStep(1)} disabled={busy}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+              <Button onClick={importPlaylist} isLoading={busy}>
+                <Link2 className="h-4 w-4 mr-2" />
+                Import videos
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {step === 3 && (
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="pt-6 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-text-primary">
+                    {form.title || playlistMeta?.title}
+                  </h2>
+                  <p className="text-sm text-text-secondary mt-1">
+                    {chapters.length} chapter{chapters.length !== 1 ? "s" : ""} ·{" "}
+                    {flatLessons.length} lessons
+                    {totalDuration > 0 ? ` · ~${totalDuration} min` : ""}
+                  </p>
+                </div>
+                <Badge variant="info">Organize</Badge>
+              </div>
+
+              {previewVideo && (
+                <div className="relative w-full max-w-3xl mx-auto aspect-video bg-black rounded-xl overflow-hidden">
+                  <LessonVideoPlayer
+                    url={previewVideo.url}
+                    title={previewVideo.title}
+                  />
+                </div>
+              )}
+              {previewVideo && (
+                <p className="text-sm text-text-secondary text-center">
+                  Playing:{" "}
+                  <span className="text-text-primary">{previewVideo.title}</span>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-medium text-brand">Chapters</h3>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    Rename chapters, split lessons into new chapters, or move lessons up/down.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addEmptyChapter}>
+                  <FolderPlus className="h-4 w-4 mr-1.5" />
+                  Add chapter
+                </Button>
+              </div>
+
+              <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1">
+                {chapters.map((chapter, ci) => (
+                  <div
+                    key={chapter.id}
+                    className="rounded-xl border border-white/[0.08] bg-surface-1/50 overflow-hidden"
+                  >
+                    <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06] bg-white/[0.02]">
+                      <input
+                        value={chapter.title}
+                        onChange={(e) => renameChapter(chapter.id, e.target.value)}
+                        className="flex-1 bg-transparent text-sm font-semibold text-text-primary focus:outline-none focus:ring-0"
+                        aria-label="Chapter title"
+                      />
+                      <span className="text-xs text-text-muted shrink-0">
+                        {chapter.lessons.length} lesson
+                        {chapter.lessons.length !== 1 ? "s" : ""}
+                      </span>
+                      {chapters.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeChapter(chapter.id)}
+                          className="p-1.5 text-text-muted hover:text-red-400"
+                          title="Remove chapter (lessons move to previous)"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="p-2 space-y-1">
+                      {chapter.lessons.length === 0 ? (
+                        <p className="text-xs text-text-muted px-2 py-3">
+                          Empty — move lessons here with ↑↓ or the chapter dropdown.
+                        </p>
+                      ) : (
+                        chapter.lessons.map((v, li) => {
+                          lessonCounter += 1;
+                          const n = lessonCounter;
+                          return (
+                            <div
+                              key={v.videoId}
+                              className={cn(
+                                "flex items-center gap-2 p-2 rounded-lg border border-transparent hover:border-white/[0.06] hover:bg-white/[0.03]",
+                                previewKey?.videoId === v.videoId &&
+                                  "border-brand/40 bg-brand/5"
+                              )}
+                            >
+                              <button
+                                type="button"
+                                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                                onClick={() =>
+                                  setPreviewKey({
+                                    chapterId: chapter.id,
+                                    videoId: v.videoId,
+                                  })
+                                }
+                              >
+                                <span className="text-xs text-text-muted w-5 shrink-0">
+                                  {n}
+                                </span>
+                                {v.thumbnail ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={v.thumbnail}
+                                    alt=""
+                                    className="h-10 w-16 object-cover rounded shrink-0"
+                                  />
+                                ) : (
+                                  <div className="h-10 w-16 rounded bg-surface-3 flex items-center justify-center shrink-0">
+                                    <PlayCircle className="h-4 w-4 text-text-muted" />
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <p className="text-sm text-text-primary truncate">
+                                    {v.title}
+                                  </p>
+                                  <p className="text-xs text-text-muted">
+                                    {v.durationMinutes
+                                      ? `${v.durationMinutes} min`
+                                      : "Video"}
+                                  </p>
+                                </div>
+                              </button>
+
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                {li > 0 && (
+                                  <button
+                                    type="button"
+                                    title="Start new chapter from here"
+                                    onClick={() => splitChapterAt(chapter.id, li)}
+                                    className="p-1.5 text-text-muted hover:text-brand"
+                                  >
+                                    <Scissors className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  title="Move up"
+                                  onClick={() => moveLesson(chapter.id, li, "up")}
+                                  className="p-1.5 text-text-muted hover:text-text-primary"
+                                >
+                                  <ChevronUp className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Move down"
+                                  onClick={() => moveLesson(chapter.id, li, "down")}
+                                  className="p-1.5 text-text-muted hover:text-text-primary"
+                                >
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                </button>
+                                {chapters.length > 1 && (
+                                  <select
+                                    className="max-w-[110px] text-[10px] bg-surface-2 border border-white/[0.08] rounded px-1 py-1 text-text-secondary"
+                                    value={chapter.id}
+                                    onChange={(e) =>
+                                      moveLessonToChapter(
+                                        chapter.id,
+                                        v.videoId,
+                                        e.target.value
+                                      )
+                                    }
+                                    title="Move to chapter"
+                                  >
+                                    {chapters.map((c, i) => (
+                                      <option key={c.id} value={c.id}>
+                                        Ch {i + 1}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => removeLesson(chapter.id, v.videoId)}
+                                  className="p-1.5 text-text-muted hover:text-red-400"
+                                  aria-label="Remove lesson"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-text-muted flex items-center gap-1.5">
+                <Scissors className="h-3 w-3" />
+                Click scissors on a lesson to start a new chapter from that video downward.
+              </p>
+
+              <div className="flex justify-between gap-3 pt-2">
+                <Button variant="ghost" onClick={() => setStep(2)} disabled={busy}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back
+                </Button>
+                <Button
+                  onClick={goToAssessments}
+                  disabled={flatLessons.length === 0}
+                >
+                  Next: Assessments
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {step === 4 && (
+        <Card>
+          <CardContent className="space-y-5 pt-6">
+            <div>
+              <h2 className="text-lg font-semibold text-text-primary">
+                Assessments
+              </h2>
+              <p className="text-sm text-text-secondary mt-1">
+                Optional. Add a quiz per chapter (unlocks the next chapter) and a
+                final exam (required for the certificate). You can also skip and
+                add quizzes later from Manage Course.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {chapters
+                .filter((c) => c.lessons.length > 0)
+                .map((ch, i) => {
+                  const draft =
+                    chapterAssessments[ch.id] ||
+                    emptyAssessment(`${ch.title} Quiz`);
+                  return (
+                    <div
+                      key={ch.id}
+                      className="rounded-lg border border-white/[0.08] bg-white/[0.02]"
+                    >
+                      <div className="flex items-center justify-between gap-3 p-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <HelpCircle className="h-4 w-4 text-text-tertiary shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-text-primary truncate">
+                              Chapter {i + 1}: {ch.title}
+                            </p>
+                            <p className="text-xs text-text-muted">
+                              {draft.enabled
+                                ? `${draft.questions.length} question(s)`
+                                : "No quiz"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={draft.enabled}
+                              onChange={(e) =>
+                                updateChapterAssessment(ch.id, {
+                                  enabled: e.target.checked,
+                                  expanded: e.target.checked,
+                                  title: draft.title || `${ch.title} Quiz`,
+                                })
+                              }
+                            />
+                            Add quiz
+                          </label>
+                          {draft.enabled && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                updateChapterAssessment(ch.id, {
+                                  expanded: !draft.expanded,
+                                })
+                              }
+                            >
+                              {draft.expanded ? "Hide" : "Edit"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      {draft.enabled && draft.expanded && (
+                        <div className="px-4 pb-4 space-y-3 border-t border-white/[0.06] pt-4">
+                          <Input
+                            label="Quiz title"
+                            value={draft.title}
+                            onChange={(e) =>
+                              updateChapterAssessment(ch.id, {
+                                title: e.target.value,
+                              })
+                            }
+                          />
+                          <div className="grid grid-cols-3 gap-3">
+                            <Input
+                              label="Pass %"
+                              type="number"
+                              value={draft.passingScore}
+                              onChange={(e) =>
+                                updateChapterAssessment(ch.id, {
+                                  passingScore: e.target.value,
+                                })
+                              }
+                            />
+                            <Input
+                              label="Attempts"
+                              type="number"
+                              value={draft.maxAttempts}
+                              onChange={(e) =>
+                                updateChapterAssessment(ch.id, {
+                                  maxAttempts: e.target.value,
+                                })
+                              }
+                            />
+                            <Input
+                              label="Time (min)"
+                              type="number"
+                              placeholder="None"
+                              value={draft.timeLimit}
+                              onChange={(e) =>
+                                updateChapterAssessment(ch.id, {
+                                  timeLimit: e.target.value,
+                                })
+                              }
+                            />
+                          </div>
+                          <QuizQuestionEditor
+                            questions={draft.questions}
+                            onChange={(questions) =>
+                              updateChapterAssessment(ch.id, { questions })
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04]">
+                <div className="flex items-center justify-between gap-3 p-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Award className="h-4 w-4 text-amber-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-text-primary">
+                        Final exam
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        Students must pass this to earn a certificate
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={finalAssessment.enabled}
+                        onChange={(e) =>
+                          setFinalAssessment((prev) => ({
+                            ...prev,
+                            enabled: e.target.checked,
+                            expanded: e.target.checked,
+                          }))
+                        }
+                      />
+                      Add final
+                    </label>
+                    {finalAssessment.enabled && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setFinalAssessment((prev) => ({
+                            ...prev,
+                            expanded: !prev.expanded,
+                          }))
+                        }
+                      >
+                        {finalAssessment.expanded ? "Hide" : "Edit"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {finalAssessment.enabled && finalAssessment.expanded && (
+                  <div className="px-4 pb-4 space-y-3 border-t border-white/[0.06] pt-4">
+                    <Input
+                      label="Exam title"
+                      value={finalAssessment.title}
+                      onChange={(e) =>
+                        setFinalAssessment((prev) => ({
+                          ...prev,
+                          title: e.target.value,
+                        }))
+                      }
+                    />
+                    <div className="grid grid-cols-3 gap-3">
+                      <Input
+                        label="Pass %"
+                        type="number"
+                        value={finalAssessment.passingScore}
+                        onChange={(e) =>
+                          setFinalAssessment((prev) => ({
+                            ...prev,
+                            passingScore: e.target.value,
+                          }))
+                        }
+                      />
+                      <Input
+                        label="Attempts"
+                        type="number"
+                        value={finalAssessment.maxAttempts}
+                        onChange={(e) =>
+                          setFinalAssessment((prev) => ({
+                            ...prev,
+                            maxAttempts: e.target.value,
+                          }))
+                        }
+                      />
+                      <Input
+                        label="Time (min)"
+                        type="number"
+                        placeholder="None"
+                        value={finalAssessment.timeLimit}
+                        onChange={(e) =>
+                          setFinalAssessment((prev) => ({
+                            ...prev,
+                            timeLimit: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <QuizQuestionEditor
+                      questions={finalAssessment.questions}
+                      onChange={(questions) =>
+                        setFinalAssessment((prev) => ({ ...prev, questions }))
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-between gap-3 pt-2">
+              <Button variant="ghost" onClick={() => setStep(3)} disabled={busy}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => void publishCourse({ skipAssessments: true })}
+                  disabled={busy}
+                >
+                  Skip & publish
+                </Button>
+                <Button onClick={() => void publishCourse()} isLoading={busy}>
+                  <Rocket className="h-4 w-4 mr-2" />
+                  Publish course
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {step === 5 && (
+        <Card>
+          <CardContent className="py-12 text-center space-y-4">
+            <div className="mx-auto h-14 w-14 rounded-full bg-brand/15 flex items-center justify-center">
+              <Check className="h-7 w-7 text-brand" />
+            </div>
+            <h2 className="text-xl font-bold text-text-primary">Course published!</h2>
+            <p className="text-sm text-text-secondary max-w-md mx-auto">
+              Your course is live with {chapters.filter((c) => c.lessons.length).length}{" "}
+              chapters. Students can find it on the Courses page.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              {courseId && (
+                <Link href={`/dashboard/classrooms/${courseId}`}>
+                  <Button>
+                    <BookOpen className="h-4 w-4 mr-2" />
+                    Manage course
+                  </Button>
+                </Link>
+              )}
+              <Link href="/dashboard/courses">
+                <Button variant="outline">My Courses</Button>
+              </Link>
+              <Link href="/dashboard">
+                <Button variant="ghost">Back to dashboard</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {busy && step === 2 && (
+        <div className="flex items-center justify-center gap-2 text-sm text-text-tertiary">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Importing playlist…
+        </div>
+      )}
     </div>
   );
 }

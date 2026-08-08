@@ -1,19 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
 import {
   Play, CheckCircle, ChevronLeft, ChevronRight, BookOpen,
-  Clock, FileText, MessageSquare, Bookmark, BookmarkCheck,
+  Clock, FileText, MessageSquare,
   ChevronDown, ChevronUp, Lock, Video, PenLine, List,
-  GraduationCap, Award,
+  Award, HelpCircle, GraduationCap,
 } from "lucide-react";
+import { LessonVideoPlayer } from "@/components/course/lesson-video-player";
 
 interface Lesson {
   id: string;
@@ -31,7 +30,23 @@ interface Section {
   id: string;
   title: string;
   order: number;
+  unlocked: boolean;
   lessons: Lesson[];
+}
+
+interface CourseQuiz {
+  id: string;
+  title: string;
+  order: number;
+  questionCount: number;
+  passed: boolean;
+  unlocked: boolean;
+  /** True when all chapter (or course, for final) lessons are completed */
+  chapterComplete?: boolean;
+  bestScore: number | null;
+  attemptsUsed: number;
+  maxAttempts: number;
+  passingScore: number;
 }
 
 interface CourseData {
@@ -39,6 +54,7 @@ interface CourseData {
   title: string;
   slug: string;
   sections: Section[];
+  quizzes: CourseQuiz[];
   instructor: { name: string; image: string | null };
   enrollment: {
     progress: number;
@@ -48,10 +64,10 @@ interface CourseData {
 }
 
 export default function LearnPage({ params }: { params: Promise<{ courseId: string; lessonId: string }> }) {
-  const { data: session } = useSession();
   const router = useRouter();
   const [course, setCourse] = useState<CourseData | null>(null);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
+  const [currentSection, setCurrentSection] = useState<Section | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState("");
@@ -80,16 +96,29 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
         const data = await res.json();
         setCourse(data);
 
-        // Find current lesson
-        for (const section of data.sections) {
-          const lesson = section.lessons.find((l: Lesson) => l.id === resolvedParams!.lessonId);
+        let foundSection: Section | null = null;
+        let foundLesson: Lesson | null = null;
+        for (const section of data.sections as Section[]) {
+          const lesson = section.lessons.find((l) => l.id === resolvedParams!.lessonId);
           if (lesson) {
-            setCurrentLesson(lesson);
+            foundSection = section;
+            foundLesson = lesson;
             setExpandedSections(new Set([section.id]));
             break;
           }
         }
 
+        if (foundLesson && foundSection && !foundSection.unlocked) {
+          const firstOpen = (data.sections as Section[]).find((s) => s.unlocked);
+          const fallback = firstOpen?.lessons[0];
+          if (fallback) {
+            router.replace(`/learn/${resolvedParams!.courseId}/${fallback.id}`);
+            return;
+          }
+        }
+
+        setCurrentLesson(foundLesson);
+        setCurrentSection(foundSection);
         setLoading(false);
       } catch {
         setLoading(false);
@@ -99,10 +128,16 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
     fetchData();
   }, [resolvedParams, router]);
 
-  const allLessons = course?.sections.flatMap((s) => s.lessons) || [];
+  const allLessons =
+    course?.sections.flatMap((s) =>
+      s.unlocked ? s.lessons.map((l) => ({ ...l, sectionId: s.id })) : []
+    ) || [];
   const currentIndex = allLessons.findIndex((l) => l.id === currentLesson?.id);
   const prevLesson = currentIndex > 0 ? allLessons[currentIndex - 1] : null;
-  const nextLesson = currentIndex < allLessons.length - 1 ? allLessons[currentIndex + 1] : null;
+  const nextLesson = currentIndex >= 0 && currentIndex < allLessons.length - 1 ? allLessons[currentIndex + 1] : null;
+
+  const sectionQuiz =
+    course?.quizzes.find((q) => currentSection && q.order === currentSection.order) || null;
 
   const markComplete = async () => {
     if (!currentLesson || !resolvedParams) return;
@@ -111,16 +146,23 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lessonId: currentLesson.id, completed: true }),
     });
-    if (course) {
+    // Refetch so chapter quizzes appear as soon as all videos are done
+    const res = await fetch(`/api/courses/${resolvedParams.courseId}/learn`);
+    if (res.ok) {
+      const data = await res.json();
+      setCourse(data);
+    } else if (course) {
       setCourse({
         ...course,
-        completedLessons: [...course.completedLessons, currentLesson.id],
+        completedLessons: [
+          ...new Set([...course.completedLessons, currentLesson.id]),
+        ],
       });
     }
   };
 
-  const navigateToLesson = (lessonId: string) => {
-    if (!resolvedParams) return;
+  const navigateToLesson = (lessonId: string, sectionUnlocked = true) => {
+    if (!resolvedParams || !sectionUnlocked) return;
     router.push(`/learn/${resolvedParams.courseId}/${lessonId}`);
   };
 
@@ -146,8 +188,12 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
 
   const isCompleted = course.completedLessons.includes(currentLesson.id);
   const completedCount = course.completedLessons.length;
-  const totalCount = allLessons.length;
+  const totalCount = course.sections.reduce((n, s) => n + s.lessons.length, 0);
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const finalQuiz = course.quizzes.length
+    ? [...course.quizzes].sort((a, b) => b.order - a.order)[0]
+    : null;
+  const chapterQuizOrders = new Set(course.sections.map((s) => s.order));
 
   return (
     <div className="min-h-screen bg-surface-0 text-text-primary flex flex-col">
@@ -181,21 +227,23 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
       <div className="flex flex-1 overflow-hidden">
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-y-auto">
-          {/* Video/Content Area */}
-          <div className="bg-black aspect-video max-h-[60vh] flex items-center justify-center relative">
+          {/* Video/Content Area — centered 16:9 like YouTube */}
+          <div className="bg-black w-full flex items-center justify-center px-0 sm:px-4 py-0 sm:py-3">
             {currentLesson.type === "VIDEO" ? (
               currentLesson.videoUrl ? (
-                <video
-                  src={currentLesson.videoUrl}
-                  controls
-                  className="w-full h-full"
-                  autoPlay
-                />
+                <div className="relative w-full max-w-4xl aspect-video bg-black overflow-hidden shadow-lg">
+                  <LessonVideoPlayer
+                    url={currentLesson.videoUrl}
+                    title={currentLesson.title}
+                  />
+                </div>
               ) : (
-                <div className="text-center">
-                  <Video className="h-16 w-16 mx-auto mb-4 text-text-muted" />
-                  <p className="text-text-tertiary">Video content will be available here</p>
-                  <p className="text-sm text-text-muted mt-1">Demo mode - no video file attached</p>
+                <div className="relative w-full max-w-4xl aspect-video flex items-center justify-center">
+                  <div className="text-center">
+                    <Video className="h-16 w-16 mx-auto mb-4 text-text-muted" />
+                    <p className="text-text-tertiary">Video content will be available here</p>
+                    <p className="text-sm text-text-muted mt-1">Demo mode - no video file attached</p>
+                  </div>
                 </div>
               )
             ) : currentLesson.type === "TEXT" ? (
@@ -206,9 +254,11 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
                 </div>
               </div>
             ) : (
-              <div className="text-center">
-                <FileText className="h-16 w-16 mx-auto mb-4 text-text-muted" />
-                <p className="text-text-tertiary">{currentLesson.type} Lesson</p>
+              <div className="relative w-full max-w-4xl aspect-video flex items-center justify-center">
+                <div className="text-center">
+                  <FileText className="h-16 w-16 mx-auto mb-4 text-text-muted" />
+                  <p className="text-text-tertiary">{currentLesson.type} Lesson</p>
+                </div>
               </div>
             )}
           </div>
@@ -276,6 +326,39 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
               </div>
             )}
 
+            {/* Quiz appears only after every lesson in the chapter is complete */}
+            {sectionQuiz?.chapterComplete && (
+              <div className="mt-6 rounded-xl border border-brand/25 bg-brand/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-brand">
+                    {sectionQuiz.unlocked
+                      ? "Chapter quiz ready"
+                      : "Chapter complete — quiz locked"}
+                  </p>
+                  <p className="text-xs text-text-tertiary mt-0.5">
+                    {sectionQuiz.unlocked
+                      ? `Pass "${sectionQuiz.title}" to unlock the next chapter.`
+                      : "Pass the previous chapter quiz first."}
+                  </p>
+                </div>
+                <Link
+                  href={
+                    sectionQuiz.unlocked
+                      ? `/learn/${resolvedParams?.courseId}/quiz/${sectionQuiz.id}`
+                      : "#"
+                  }
+                  onClick={(e) => {
+                    if (!sectionQuiz.unlocked) e.preventDefault();
+                  }}
+                >
+                  <Button size="sm" disabled={!sectionQuiz.unlocked}>
+                    <HelpCircle className="h-4 w-4 mr-1" />
+                    {sectionQuiz.passed ? "Review quiz" : "Take quiz"}
+                  </Button>
+                </Link>
+              </div>
+            )}
+
             {/* Navigation */}
             <div className="flex items-center justify-between mt-8 pt-6 border-t border-white/[0.06]">
               <div>
@@ -298,6 +381,36 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
                     </div>
                     <ChevronRight className="h-4 w-4" />
                   </button>
+                ) : sectionQuiz?.chapterComplete && !sectionQuiz.passed ? (
+                  <Link
+                    href={
+                      sectionQuiz.unlocked
+                        ? `/learn/${resolvedParams?.courseId}/quiz/${sectionQuiz.id}`
+                        : "#"
+                    }
+                    onClick={(e) => {
+                      if (!sectionQuiz.unlocked) e.preventDefault();
+                    }}
+                  >
+                    <Button size="sm" disabled={!sectionQuiz.unlocked}>
+                      <HelpCircle className="h-4 w-4 mr-1" /> Take chapter quiz
+                    </Button>
+                  </Link>
+                ) : finalQuiz?.chapterComplete && !finalQuiz.passed ? (
+                  <Link
+                    href={
+                      finalQuiz.unlocked
+                        ? `/learn/${resolvedParams?.courseId}/quiz/${finalQuiz.id}`
+                        : "#"
+                    }
+                    onClick={(e) => {
+                      if (!finalQuiz.unlocked) e.preventDefault();
+                    }}
+                  >
+                    <Button size="sm" disabled={!finalQuiz.unlocked}>
+                      <GraduationCap className="h-4 w-4 mr-1" /> Final exam
+                    </Button>
+                  </Link>
                 ) : (
                   <Link href="/dashboard/certificates">
                     <Button size="sm" variant="success">
@@ -325,64 +438,151 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
             </div>
           </div>
 
-          {course.sections.map((section) => (
-            <div key={section.id} className="border-b border-white/[0.06]">
-              <button
-                onClick={() => {
-                  const next = new Set(expandedSections);
-                  if (next.has(section.id)) next.delete(section.id);
-                  else next.add(section.id);
-                  setExpandedSections(next);
-                }}
-                className="w-full flex items-center justify-between p-3 hover:bg-white/[0.03] transition-colors"
-              >
-                <div className="text-left">
-                  <p className="text-sm font-medium">{section.title}</p>
-                  <p className="text-xs text-text-muted">
-                    {section.lessons.filter((l) => course.completedLessons.includes(l.id)).length}/{section.lessons.length} lessons
-                  </p>
-                </div>
-                {expandedSections.has(section.id) ? (
-                  <ChevronUp className="h-4 w-4 text-text-tertiary" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-text-tertiary" />
-                )}
-              </button>
+          {course.sections.map((section) => {
+            const quizForSection = course.quizzes.find((q) => q.order === section.order);
 
-              {expandedSections.has(section.id) && (
-                <div className="pb-2">
-                  {section.lessons.map((lesson) => {
-                    const isActive = lesson.id === currentLesson.id;
-                    const isLessonCompleted = course.completedLessons.includes(lesson.id);
+            return (
+              <div key={section.id} className="border-b border-white/[0.06]">
+                <button
+                  onClick={() => {
+                    if (!section.unlocked) return;
+                    const next = new Set(expandedSections);
+                    if (next.has(section.id)) next.delete(section.id);
+                    else next.add(section.id);
+                    setExpandedSections(next);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 transition-colors ${
+                    section.unlocked ? "hover:bg-white/[0.03]" : "opacity-60 cursor-not-allowed"
+                  }`}
+                >
+                  <div className="text-left">
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      {!section.unlocked && <Lock className="h-3.5 w-3.5 text-text-muted" />}
+                      {section.title}
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      {section.unlocked
+                        ? `${section.lessons.filter((l) => course.completedLessons.includes(l.id)).length}/${section.lessons.length} lessons`
+                        : "Pass previous quiz to unlock"}
+                    </p>
+                  </div>
+                  {section.unlocked && (
+                    expandedSections.has(section.id) ? (
+                      <ChevronUp className="h-4 w-4 text-text-tertiary" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-text-tertiary" />
+                    )
+                  )}
+                </button>
 
-                    return (
-                      <button
-                        key={lesson.id}
-                        onClick={() => navigateToLesson(lesson.id)}
+                {section.unlocked && expandedSections.has(section.id) && (
+                  <div className="pb-2">
+                    {section.lessons.map((lesson) => {
+                      const isActive = lesson.id === currentLesson.id;
+                      const isLessonCompleted = course.completedLessons.includes(lesson.id);
+
+                      return (
+                        <button
+                          key={lesson.id}
+                          onClick={() => navigateToLesson(lesson.id, section.unlocked)}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+                            isActive
+                              ? "bg-brand/20 text-brand border-l-2 border-brand"
+                              : "text-text-tertiary hover:bg-white/[0.03] hover:text-text-secondary"
+                          }`}
+                        >
+                          {isLessonCompleted ? (
+                            <CheckCircle className="h-4 w-4 text-brand shrink-0" />
+                          ) : isActive ? (
+                            <Play className="h-4 w-4 text-brand shrink-0" />
+                          ) : (
+                            <div className="h-4 w-4 rounded-full border border-white/[0.06] shrink-0" />
+                          )}
+                          <span className="truncate text-left">{lesson.title}</span>
+                          {lesson.duration > 0 && (
+                            <span className="text-xs text-text-muted ml-auto shrink-0">{lesson.duration}m</span>
+                          )}
+                        </button>
+                      );
+                    })}
+
+                    {quizForSection?.chapterComplete && (
+                      <Link
+                        href={
+                          quizForSection.unlocked
+                            ? `/learn/${resolvedParams?.courseId}/quiz/${quizForSection.id}`
+                            : "#"
+                        }
+                        onClick={(e) => {
+                          if (!quizForSection.unlocked) e.preventDefault();
+                        }}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
-                          isActive
-                            ? "bg-brand/20 text-brand border-l-2 border-brand"
-                            : "text-text-tertiary hover:bg-white/[0.03] hover:text-text-secondary"
+                          quizForSection.unlocked
+                            ? "text-amber-300/90 hover:bg-white/[0.03]"
+                            : "text-text-muted cursor-not-allowed"
                         }`}
                       >
-                        {isLessonCompleted ? (
+                        {quizForSection.passed ? (
                           <CheckCircle className="h-4 w-4 text-brand shrink-0" />
-                        ) : isActive ? (
-                          <Play className="h-4 w-4 text-brand shrink-0" />
+                        ) : quizForSection.unlocked ? (
+                          <HelpCircle className="h-4 w-4 shrink-0" />
                         ) : (
-                          <div className="h-4 w-4 rounded-full border border-white/[0.06] shrink-0" />
+                          <Lock className="h-4 w-4 shrink-0" />
                         )}
-                        <span className="truncate text-left">{lesson.title}</span>
-                        {lesson.duration > 0 && (
-                          <span className="text-xs text-text-muted ml-auto shrink-0">{lesson.duration}m</span>
-                        )}
-                      </button>
-                    );
-                  })}
+                        <span className="truncate text-left">{quizForSection.title}</span>
+                        <span className="text-xs text-text-muted ml-auto shrink-0">
+                          {quizForSection.passed
+                            ? `${Math.round(quizForSection.bestScore ?? 0)}%`
+                            : "Quiz"}
+                        </span>
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Final exam — only after every lesson in the course is complete */}
+          {finalQuiz &&
+            !chapterQuizOrders.has(finalQuiz.order) &&
+            finalQuiz.chapterComplete && (
+            <div className="p-3 border-b border-white/[0.06]">
+              <Link
+                href={
+                  finalQuiz.unlocked
+                    ? `/learn/${resolvedParams?.courseId}/quiz/${finalQuiz.id}`
+                    : "#"
+                }
+                onClick={(e) => {
+                  if (!finalQuiz.unlocked) e.preventDefault();
+                }}
+                className={`flex items-center gap-3 rounded-lg px-2 py-2.5 text-sm ${
+                  finalQuiz.unlocked
+                    ? "hover:bg-white/[0.03] text-text-secondary"
+                    : "opacity-60 cursor-not-allowed text-text-muted"
+                }`}
+              >
+                {finalQuiz.passed ? (
+                  <CheckCircle className="h-4 w-4 text-brand shrink-0" />
+                ) : finalQuiz.unlocked ? (
+                  <GraduationCap className="h-4 w-4 shrink-0" />
+                ) : (
+                  <Lock className="h-4 w-4 shrink-0" />
+                )}
+                <div className="min-w-0 text-left">
+                  <p className="font-medium truncate">{finalQuiz.title}</p>
+                  <p className="text-xs text-text-muted">
+                    {finalQuiz.passed
+                      ? `Passed · ${Math.round(finalQuiz.bestScore ?? 0)}%`
+                      : finalQuiz.unlocked
+                        ? `Pass ${finalQuiz.passingScore}% required`
+                        : "Pass all chapter quizzes first"}
+                  </p>
                 </div>
-              )}
+              </Link>
             </div>
-          ))}
+          )}
         </div>
 
         {/* Toggle sidebar button */}

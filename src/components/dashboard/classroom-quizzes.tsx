@@ -9,6 +9,13 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
+  QuizQuestionEditor,
+  EMPTY_QUESTION,
+  validateQuizQuestions,
+  serializeQuizQuestions,
+  type QuizQuestionDraft,
+} from "@/components/dashboard/quiz-question-editor";
+import {
   HelpCircle,
   Plus,
   X,
@@ -22,18 +29,8 @@ import {
   ToggleLeft,
   ToggleRight,
   Users,
+  Award,
 } from "lucide-react";
-
-interface QuizQuestion {
-  id?: string;
-  text: string;
-  type: string;
-  options: string | null;
-  correctAnswer: string;
-  points: number;
-  explanation: string;
-  order: number;
-}
 
 interface Quiz {
   id: string;
@@ -46,52 +43,48 @@ interface Quiz {
   order: number;
   isActive: boolean;
   createdAt: string;
+  isFinal?: boolean;
+  sectionTitle?: string | null;
+  sectionOrder?: number | null;
   _count: {
     questions: number;
     attempts: number;
   };
 }
 
+interface SectionOption {
+  id: string;
+  title: string;
+  order: number;
+}
+
 interface ClassroomQuizzesProps {
   courseId: string;
 }
 
-const QUESTION_TYPE_OPTIONS = [
-  { value: "MULTIPLE_CHOICE", label: "Multiple Choice" },
-  { value: "TRUE_FALSE", label: "True / False" },
-];
-
-const EMPTY_QUESTION: QuizQuestion = {
-  text: "",
-  type: "MULTIPLE_CHOICE",
-  options: JSON.stringify(["", "", "", ""]),
-  correctAnswer: "",
-  points: 1,
-  explanation: "",
-  order: 0,
-};
-
 export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [sections, setSections] = useState<SectionOption[]>([]);
+  const [maxSectionOrder, setMaxSectionOrder] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Create quiz multi-step form
   const [showForm, setShowForm] = useState(false);
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
 
-  // Step 1: Quiz settings
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [timeLimit, setTimeLimit] = useState("");
-  const [passingScore, setPassingScore] = useState("70");
+  const [passingScore, setPassingScore] = useState("50");
   const [maxAttempts, setMaxAttempts] = useState("3");
+  const [placement, setPlacement] = useState<"chapter" | "final">("chapter");
+  const [sectionOrder, setSectionOrder] = useState("");
 
-  // Step 2: Questions
-  const [questions, setQuestions] = useState<QuizQuestion[]>([{ ...EMPTY_QUESTION }]);
+  const [questions, setQuestions] = useState<QuizQuestionDraft[]>([
+    { ...EMPTY_QUESTION },
+  ]);
 
-  // Toggle / delete states
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -104,7 +97,18 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
       const res = await fetch(`/api/classrooms/${courseId}/quizzes`);
       if (res.ok) {
         const data = await res.json();
-        setQuizzes(data);
+        setQuizzes(Array.isArray(data) ? data : data.quizzes || []);
+        setSections(data.sections || []);
+        setMaxSectionOrder(data.maxSectionOrder || 0);
+        if (!sectionOrder && data.sections?.length) {
+          const taken = new Set(
+            (data.quizzes || []).map((q: Quiz) => q.order)
+          );
+          const free = data.sections.find(
+            (s: SectionOption) => !taken.has(s.order)
+          );
+          setSectionOrder(String(free?.order ?? data.sections[0].order));
+        }
       }
     } catch {
       console.error("Failed to fetch quizzes");
@@ -119,13 +123,15 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
     setTitle("");
     setDescription("");
     setTimeLimit("");
-    setPassingScore("70");
+    setPassingScore("50");
     setMaxAttempts("3");
+    setPlacement("chapter");
     setQuestions([{ ...EMPTY_QUESTION }]);
     setError("");
+    const taken = new Set(quizzes.map((q) => q.order));
+    const free = sections.find((s) => !taken.has(s.order));
+    setSectionOrder(String(free?.order ?? sections[0]?.order ?? ""));
   }
-
-  // --- Step navigation ---
 
   function goToStep2() {
     setError("");
@@ -133,94 +139,38 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
       setError("Quiz title is required.");
       return;
     }
+    if (sections.length === 0) {
+      setError("Add chapters/lessons before creating quizzes.");
+      return;
+    }
+    if (placement === "chapter" && !sectionOrder) {
+      setError("Select a chapter for this quiz.");
+      return;
+    }
+    if (placement === "final") {
+      const hasFinal = quizzes.some(
+        (q) => q.isFinal || q.order === maxSectionOrder + 1
+      );
+      if (hasFinal) {
+        setError("A final exam already exists. Delete it first to replace.");
+        return;
+      }
+    } else {
+      const order = parseInt(sectionOrder, 10);
+      if (quizzes.some((q) => q.order === order)) {
+        setError("This chapter already has a quiz.");
+        return;
+      }
+    }
     setStep(2);
   }
 
-  // --- Question helpers ---
-
-  function updateQuestion(index: number, field: keyof QuizQuestion, value: string | number) {
-    setQuestions((prev) =>
-      prev.map((q, i) => (i === index ? { ...q, [field]: value } : q))
-    );
-  }
-
-  function updateOption(questionIndex: number, optionIndex: number, value: string) {
-    setQuestions((prev) =>
-      prev.map((q, i) => {
-        if (i !== questionIndex) return q;
-        const opts: string[] = q.options ? JSON.parse(q.options) : ["", "", "", ""];
-        opts[optionIndex] = value;
-        return { ...q, options: JSON.stringify(opts) };
-      })
-    );
-  }
-
-  function addQuestion() {
-    setQuestions((prev) => [
-      ...prev,
-      { ...EMPTY_QUESTION, order: prev.length },
-    ]);
-  }
-
-  function removeQuestion(index: number) {
-    if (questions.length <= 1) return;
-    setQuestions((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function handleTypeChange(index: number, newType: string) {
-    setQuestions((prev) =>
-      prev.map((q, i) => {
-        if (i !== index) return q;
-        if (newType === "TRUE_FALSE") {
-          return {
-            ...q,
-            type: newType,
-            options: JSON.stringify(["True", "False"]),
-            correctAnswer: "",
-          };
-        }
-        return {
-          ...q,
-          type: newType,
-          options: JSON.stringify(["", "", "", ""]),
-          correctAnswer: "",
-        };
-      })
-    );
-  }
-
-  // --- Submit quiz ---
-
   async function handleSubmit() {
     setError("");
-
-    // Validate questions
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
-      if (!q.text.trim()) {
-        setError(`Question ${i + 1}: text is required.`);
-        return;
-      }
-      if (!q.correctAnswer.trim()) {
-        setError(`Question ${i + 1}: correct answer is required.`);
-        return;
-      }
-      if (q.type === "MULTIPLE_CHOICE") {
-        const opts: string[] = q.options ? JSON.parse(q.options) : [];
-        const filledOpts = opts.filter((o) => o.trim());
-        if (filledOpts.length < 2) {
-          setError(`Question ${i + 1}: at least 2 options are required.`);
-          return;
-        }
-        if (!opts.includes(q.correctAnswer)) {
-          setError(`Question ${i + 1}: correct answer must match one of the options.`);
-          return;
-        }
-      }
-      if (q.type === "TRUE_FALSE" && !["True", "False"].includes(q.correctAnswer)) {
-        setError(`Question ${i + 1}: correct answer must be "True" or "False".`);
-        return;
-      }
+    const validation = validateQuizQuestions(questions);
+    if (validation) {
+      setError(validation);
+      return;
     }
 
     setSubmitting(true);
@@ -232,16 +182,12 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
           title: title.trim(),
           description: description.trim() || undefined,
           timeLimit: timeLimit ? parseInt(timeLimit, 10) : undefined,
-          passingScore: passingScore ? parseFloat(passingScore) : 70,
+          passingScore: passingScore ? parseFloat(passingScore) : 50,
           maxAttempts: maxAttempts ? parseInt(maxAttempts, 10) : 3,
-          questions: questions.map((q, i) => ({
-            text: q.text.trim(),
-            type: q.type,
-            options: q.options,
-            correctAnswer: q.correctAnswer.trim(),
-            points: q.points || 1,
-            explanation: q.explanation?.trim() || undefined,
-          })),
+          isFinal: placement === "final",
+          sectionOrder:
+            placement === "chapter" ? parseInt(sectionOrder, 10) : undefined,
+          questions: serializeQuizQuestions(questions),
         }),
       });
 
@@ -251,8 +197,7 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
         return;
       }
 
-      const newQuiz = await res.json();
-      setQuizzes((prev) => [...prev, newQuiz]);
+      await fetchQuizzes();
       resetForm();
     } catch {
       setError("Something went wrong. Please try again.");
@@ -261,21 +206,24 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
     }
   }
 
-  // --- Toggle active ---
-
   async function handleToggleActive(quiz: Quiz) {
     setTogglingId(quiz.id);
     try {
-      const res = await fetch(`/api/classrooms/${courseId}/quizzes/${quiz.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: !quiz.isActive }),
-      });
+      const res = await fetch(
+        `/api/classrooms/${courseId}/quizzes/${quiz.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: !quiz.isActive }),
+        }
+      );
 
       if (res.ok) {
         const updated = await res.json();
         setQuizzes((prev) =>
-          prev.map((q) => (q.id === updated.id ? { ...q, isActive: updated.isActive } : q))
+          prev.map((q) =>
+            q.id === updated.id ? { ...q, isActive: updated.isActive } : q
+          )
         );
       }
     } catch {
@@ -285,14 +233,13 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
     }
   }
 
-  // --- Delete quiz ---
-
   async function handleDelete(quizId: string) {
     setDeletingId(quizId);
     try {
-      const res = await fetch(`/api/classrooms/${courseId}/quizzes/${quizId}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/classrooms/${courseId}/quizzes/${quizId}`,
+        { method: "DELETE" }
+      );
 
       if (res.ok) {
         setQuizzes((prev) => prev.filter((q) => q.id !== quizId));
@@ -304,7 +251,21 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
     }
   }
 
-  // --- Loading ---
+  const chapterOptions = sections.map((s) => {
+    const taken = quizzes.some((q) => q.order === s.order);
+    return {
+      value: String(s.order),
+      label: taken
+        ? `Ch ${s.order}: ${s.title} (has quiz)`
+        : `Ch ${s.order}: ${s.title}`,
+      disabled: taken,
+    };
+  });
+
+  const availableChapterOptions = chapterOptions.filter((o) => !o.disabled);
+  const hasFinal = quizzes.some(
+    (q) => q.isFinal || q.order === maxSectionOrder + 1
+  );
 
   if (loading) {
     return (
@@ -314,25 +275,36 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
     );
   }
 
-  // --- Render ---
-
   return (
     <div className="space-y-4">
-      {/* Create Quiz Button */}
       {!showForm && (
         <div className="flex justify-end">
-          <Button variant="primary" size="sm" onClick={() => setShowForm(true)}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setShowForm(true);
+              const free = availableChapterOptions[0];
+              setSectionOrder(free?.value || String(sections[0]?.order || ""));
+              setPlacement(free || !hasFinal ? (free ? "chapter" : "final") : "chapter");
+            }}
+            disabled={sections.length === 0}
+          >
             <Plus className="h-4 w-4 mr-2" />
             Create Quiz
           </Button>
         </div>
       )}
 
-      {/* Multi-step Create Form */}
+      {sections.length === 0 && !showForm && (
+        <p className="text-sm text-text-muted">
+          Add chapters and lessons first, then create chapter quizzes and a final exam.
+        </p>
+      )}
+
       {showForm && (
         <Card className="border-brand/20 bg-brand/[0.02]">
           <CardContent>
-            {/* Step indicator */}
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-sm font-semibold text-text-primary">
                 {step === 1 ? "Step 1: Quiz Settings" : "Step 2: Add Questions"}
@@ -360,13 +332,12 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
               </div>
             </div>
 
-            {/* Step 1: Settings */}
             {step === 1 && (
               <div className="space-y-4">
                 <Input
                   label="Quiz Title"
                   name="quizTitle"
-                  placeholder="e.g., Module 1 Assessment"
+                  placeholder="e.g., Chapter 1 Assessment"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
@@ -379,6 +350,54 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
                 />
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-text-secondary">
+                    Placement
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPlacement("chapter")}
+                      className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
+                        placement === "chapter"
+                          ? "border-brand bg-brand/10 text-brand"
+                          : "border-white/[0.08] text-text-secondary"
+                      }`}
+                    >
+                      Chapter quiz
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlacement("final")}
+                      disabled={hasFinal}
+                      className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
+                        placement === "final"
+                          ? "border-brand bg-brand/10 text-brand"
+                          : "border-white/[0.08] text-text-secondary"
+                      } disabled:opacity-40`}
+                    >
+                      Final exam
+                    </button>
+                  </div>
+                  <p className="text-xs text-text-muted">
+                    Chapter quizzes unlock the next chapter. The final exam unlocks
+                    the certificate (order {maxSectionOrder + 1}).
+                  </p>
+                </div>
+
+                {placement === "chapter" && (
+                  <Select
+                    label="Chapter"
+                    options={
+                      availableChapterOptions.length
+                        ? availableChapterOptions
+                        : [{ value: "", label: "No chapters available" }]
+                    }
+                    value={sectionOrder}
+                    onChange={(e) => setSectionOrder(e.target.value)}
+                  />
+                )}
 
                 <div className="grid grid-cols-3 gap-4">
                   <Input
@@ -393,7 +412,7 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
                     label="Passing Score (%)"
                     name="passingScore"
                     type="number"
-                    placeholder="70"
+                    placeholder="50"
                     value={passingScore}
                     onChange={(e) => setPassingScore(e.target.value)}
                   />
@@ -421,153 +440,12 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
               </div>
             )}
 
-            {/* Step 2: Questions */}
             {step === 2 && (
               <div className="space-y-4">
-                {questions.map((question, qIndex) => {
-                  const opts: string[] = question.options
-                    ? JSON.parse(question.options)
-                    : ["", "", "", ""];
-
-                  return (
-                    <div
-                      key={qIndex}
-                      className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06] space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-text-tertiary uppercase tracking-wider">
-                          Question {qIndex + 1}
-                        </span>
-                        {questions.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeQuestion(qIndex)}
-                            className="text-text-tertiary hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      <Textarea
-                        label="Question Text"
-                        name={`q-${qIndex}-text`}
-                        placeholder="Enter your question..."
-                        value={question.text}
-                        onChange={(e) => updateQuestion(qIndex, "text", e.target.value)}
-                        rows={2}
-                      />
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <Select
-                          label="Type"
-                          options={QUESTION_TYPE_OPTIONS}
-                          value={question.type}
-                          onChange={(e) => handleTypeChange(qIndex, e.target.value)}
-                        />
-                        <Input
-                          label="Points"
-                          name={`q-${qIndex}-points`}
-                          type="number"
-                          placeholder="1"
-                          value={String(question.points)}
-                          onChange={(e) =>
-                            updateQuestion(qIndex, "points", parseInt(e.target.value, 10) || 1)
-                          }
-                        />
-                      </div>
-
-                      {/* Options */}
-                      {question.type === "MULTIPLE_CHOICE" && (
-                        <div className="space-y-2">
-                          <label className="block text-sm font-medium text-text-secondary">
-                            Options
-                          </label>
-                          {opts.map((opt, oIndex) => (
-                            <div key={oIndex} className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => updateQuestion(qIndex, "correctAnswer", opts[oIndex])}
-                                className={`flex-shrink-0 h-5 w-5 rounded-full border-2 transition-colors ${
-                                  question.correctAnswer === opt && opt.trim()
-                                    ? "border-brand bg-brand"
-                                    : "border-white/[0.15] hover:border-white/[0.3]"
-                                }`}
-                                title="Set as correct answer"
-                              >
-                                {question.correctAnswer === opt && opt.trim() && (
-                                  <svg className="h-full w-full text-white p-0.5" viewBox="0 0 16 16" fill="none">
-                                    <path d="M4 8l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                )}
-                              </button>
-                              <Input
-                                name={`q-${qIndex}-opt-${oIndex}`}
-                                placeholder={`Option ${String.fromCharCode(65 + oIndex)}`}
-                                value={opt}
-                                onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
-                              />
-                            </div>
-                          ))}
-                          <p className="text-xs text-text-muted">
-                            Click the circle to mark the correct answer
-                          </p>
-                        </div>
-                      )}
-
-                      {question.type === "TRUE_FALSE" && (
-                        <div className="space-y-2">
-                          <label className="block text-sm font-medium text-text-secondary">
-                            Correct Answer
-                          </label>
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => updateQuestion(qIndex, "correctAnswer", "True")}
-                              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                                question.correctAnswer === "True"
-                                  ? "border-brand bg-brand/10 text-brand"
-                                  : "border-white/[0.08] text-text-secondary hover:border-white/[0.15]"
-                              }`}
-                            >
-                              True
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateQuestion(qIndex, "correctAnswer", "False")}
-                              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                                question.correctAnswer === "False"
-                                  ? "border-brand bg-brand/10 text-brand"
-                                  : "border-white/[0.08] text-text-secondary hover:border-white/[0.15]"
-                              }`}
-                            >
-                              False
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      <Textarea
-                        label="Explanation (optional)"
-                        name={`q-${qIndex}-explanation`}
-                        placeholder="Explain why this is the correct answer..."
-                        value={question.explanation}
-                        onChange={(e) => updateQuestion(qIndex, "explanation", e.target.value)}
-                        rows={2}
-                      />
-                    </div>
-                  );
-                })}
-
-                {/* Add question button */}
-                <button
-                  type="button"
-                  onClick={addQuestion}
-                  className="flex items-center gap-2 w-full py-3 rounded-lg border border-dashed border-white/[0.1] text-sm text-text-tertiary hover:text-text-secondary hover:border-white/[0.2] transition-colors justify-center"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Question
-                </button>
+                <QuizQuestionEditor
+                  questions={questions}
+                  onChange={setQuestions}
+                />
 
                 {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -601,17 +479,22 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
         </Card>
       )}
 
-      {/* Quiz List */}
       {quizzes.length === 0 && !showForm ? (
         <EmptyState
           icon={<HelpCircle className="h-12 w-12" />}
           title="No quizzes yet"
-          description="Create quizzes to assess your students' understanding of the course material."
+          description="Add a quiz per chapter and a final exam so students unlock content and earn certificates."
           action={
-            <Button variant="outline" size="sm" onClick={() => setShowForm(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create First Quiz
-            </Button>
+            sections.length > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowForm(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create First Quiz
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -619,6 +502,8 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
           {quizzes.map((quiz) => {
             const isToggling = togglingId === quiz.id;
             const isDeleting = deletingId === quiz.id;
+            const final =
+              quiz.isFinal || quiz.order === maxSectionOrder + 1;
 
             return (
               <Card key={quiz.id}>
@@ -626,17 +511,35 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="h-9 w-9 rounded-lg bg-purple-500/10 flex items-center justify-center flex-shrink-0">
-                        <HelpCircle className="h-4 w-4 text-purple-400" />
+                        {final ? (
+                          <Award className="h-4 w-4 text-amber-400" />
+                        ) : (
+                          <HelpCircle className="h-4 w-4 text-purple-400" />
+                        )}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-text-primary truncate">
-                          {quiz.title}
-                        </p>
-                        <div className="flex items-center gap-3 mt-0.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <p className="text-sm font-medium text-text-primary truncate">
+                            {quiz.title}
+                          </p>
+                          <Badge
+                            variant={final ? "warning" : "default"}
+                            size="sm"
+                          >
+                            {final
+                              ? "Final exam"
+                              : quiz.sectionTitle
+                                ? `Ch ${quiz.order}: ${quiz.sectionTitle}`
+                                : `Chapter ${quiz.order}`}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                           <span className="text-xs text-text-tertiary flex items-center gap-1">
                             <HelpCircle className="h-3 w-3" />
                             {quiz._count.questions}{" "}
-                            {quiz._count.questions === 1 ? "question" : "questions"}
+                            {quiz._count.questions === 1
+                              ? "question"
+                              : "questions"}
                           </span>
                           <span className="text-xs text-text-tertiary flex items-center gap-1">
                             <Target className="h-3 w-3" />
@@ -656,7 +559,9 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
                             <span className="text-xs text-text-tertiary flex items-center gap-1">
                               <Users className="h-3 w-3" />
                               {quiz._count.attempts}{" "}
-                              {quiz._count.attempts === 1 ? "submission" : "submissions"}
+                              {quiz._count.attempts === 1
+                                ? "submission"
+                                : "submissions"}
                             </span>
                           )}
                         </div>
@@ -676,7 +581,9 @@ export function ClassroomQuizzes({ courseId }: ClassroomQuizzesProps) {
                         size="icon"
                         onClick={() => handleToggleActive(quiz)}
                         disabled={isToggling}
-                        title={quiz.isActive ? "Deactivate quiz" : "Activate quiz"}
+                        title={
+                          quiz.isActive ? "Deactivate quiz" : "Activate quiz"
+                        }
                       >
                         {isToggling ? (
                           <Loader2 className="h-4 w-4 animate-spin text-text-tertiary" />

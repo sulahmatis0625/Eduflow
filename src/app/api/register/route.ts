@@ -26,7 +26,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, email, password, role } = body;
+    const { name, email, password, role, trial } = body;
 
     if (!name || !email || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
+    const userRole = role === "INSTRUCTOR" ? "INSTRUCTOR" : "STUDENT";
 
     const user = await db.user.create({
       data: {
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
         email: normalizedEmail,
         hashedPassword,
         isActive: true,
-        role: role === "INSTRUCTOR" ? "INSTRUCTOR" : "STUDENT",
+        role: userRole,
       },
     });
 
@@ -63,17 +64,26 @@ export async function POST(req: NextRequest) {
       data: {
         userId: user.id,
         title: "Welcome to EduFlow!",
-        message: "Your account has been created successfully. Start exploring courses!",
+        message: trial
+          ? "Your free trial course has been added to My Courses. Start learning!"
+          : "Your account has been created successfully. Start exploring courses!",
         type: "SUCCESS",
-        link: "/courses",
+        link: trial ? "/dashboard/courses" : "/courses",
       },
     });
+
+    // Free-trial / student signup → auto-enroll in published free courses
+    if (userRole === "STUDENT" && trial) {
+      const { enrollUserInFreeCourses } = await import("@/lib/free-trial");
+      await enrollUserInFreeCourses(user.id);
+    }
 
     return NextResponse.json({
       id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
+      trial: !!trial,
     });
   } catch (error) {
     console.error("Registration error:", error);

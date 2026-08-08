@@ -1,23 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
+import { NavbarSearch } from "@/components/layout/navbar-search";
+import { NavbarNotifications } from "@/components/layout/navbar-notifications";
+import { cn } from "@/lib/utils";
 import {
-  GraduationCap, Menu, X, Search, Bell, BookOpen,
+  GraduationCap, Menu, X, BookOpen,
   LayoutDashboard, Trophy, LogOut, Settings, Shield,
   ChevronDown, ArrowLeft, ArrowRight,
 } from "lucide-react";
 
+function navLinkClass(active: boolean, mobile = false) {
+  if (mobile) {
+    return cn(
+      "px-3 py-2.5 text-sm rounded-lg transition-colors",
+      active
+        ? "text-brand bg-brand/10 font-medium"
+        : "text-text-tertiary hover:text-text-primary hover:bg-white/[0.03]"
+    );
+  }
+  return cn(
+    "text-sm transition-colors duration-200",
+    active
+      ? "text-brand font-medium"
+      : "text-text-secondary hover:text-white"
+  );
+}
+
 export function Navbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [canGoBack, setCanGoBack] = useState(true);
   const [canGoForward, setCanGoForward] = useState(false);
+
+  const coursesActive = pathname === "/courses" || pathname.startsWith("/courses/");
+  const leaderboardActive = pathname === "/leaderboard" || pathname.startsWith("/leaderboard/");
+  const dashboardActive = pathname === "/dashboard" || pathname.startsWith("/dashboard/");
 
   useEffect(() => {
     const updateNavigationState = () => {
@@ -36,8 +61,11 @@ export function Navbar() {
     <header className="fixed top-0 left-0 right-0 z-50 bg-surface-0/80 backdrop-blur-xl border-b border-white/[0.06]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 group">
+          {/* Logo — guests → landing; signed-in → Overview */}
+          <Link
+            href={session ? "/dashboard" : "/"}
+            className="flex items-center gap-2.5 group"
+          >
             <div className="relative bg-brand/10 p-2 rounded-xl border border-brand/20 group-hover:shadow-[0_0_20px_rgba(0,255,204,0.3)] transition-shadow">
               <GraduationCap className="h-5 w-5 text-brand" />
               <div className="absolute inset-0 rounded-xl bg-brand/5 blur-sm" />
@@ -49,14 +77,14 @@ export function Navbar() {
 
           {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-4">
-            <Link href="/courses" className="text-sm text-text-secondary hover:text-white transition-colors duration-200">
+            <Link href="/courses" className={navLinkClass(coursesActive)} aria-current={coursesActive ? "page" : undefined}>
               Courses
             </Link>
-            <Link href="/leaderboard" className="text-sm text-text-secondary hover:text-white transition-colors duration-200">
+            <Link href="/leaderboard" className={navLinkClass(leaderboardActive)} aria-current={leaderboardActive ? "page" : undefined}>
               Leaderboard
             </Link>
             {session && (
-              <Link href="/dashboard" className="text-sm text-text-secondary hover:text-white transition-colors duration-200">
+              <Link href="/dashboard" className={navLinkClass(dashboardActive)} aria-current={dashboardActive ? "page" : undefined}>
                 Dashboard
               </Link>
             )}
@@ -93,13 +121,8 @@ export function Navbar() {
 
             {session ? (
               <>
-                <Link href="/courses" className="hidden md:flex p-2 text-text-tertiary hover:text-brand rounded-lg hover:bg-white/[0.03] transition-colors">
-                  <Search className="h-5 w-5" />
-                </Link>
-                <Link href="/dashboard" className="hidden md:flex relative p-2 text-text-tertiary hover:text-brand rounded-lg hover:bg-white/[0.03] transition-colors">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-brand rounded-full shadow-[0_0_6px_rgba(0,255,204,0.6)]" />
-                </Link>
+                <NavbarSearch />
+                <NavbarNotifications />
 
                 {/* Profile Dropdown */}
                 <div className="relative">
@@ -177,16 +200,34 @@ export function Navbar() {
         {mobileOpen && (
           <div className="md:hidden py-4 border-t border-white/[0.06] bg-surface-1">
             <nav className="flex flex-col gap-1">
-              <Link href="/courses" className="px-3 py-2.5 text-sm text-text-tertiary hover:text-text-primary hover:bg-white/[0.03] rounded-lg transition-colors" onClick={() => setMobileOpen(false)}>
+              <form
+                action="/courses"
+                method="GET"
+                className="px-1 pb-2"
+                onSubmit={() => setMobileOpen(false)}
+              >
+                <input
+                  type="search"
+                  name="search"
+                  placeholder="Search courses..."
+                  className="w-full h-10 px-3 rounded-lg bg-surface-2 text-sm text-text-primary placeholder:text-text-muted border border-white/[0.08] focus:outline-none focus:ring-2 focus:ring-brand/40"
+                />
+              </form>
+              <Link href="/courses" className={navLinkClass(coursesActive, true)} aria-current={coursesActive ? "page" : undefined} onClick={() => setMobileOpen(false)}>
                 Courses
               </Link>
-              <Link href="/leaderboard" className="px-3 py-2.5 text-sm text-text-tertiary hover:text-text-primary hover:bg-white/[0.03] rounded-lg transition-colors" onClick={() => setMobileOpen(false)}>
+              <Link href="/leaderboard" className={navLinkClass(leaderboardActive, true)} aria-current={leaderboardActive ? "page" : undefined} onClick={() => setMobileOpen(false)}>
                 Leaderboard
               </Link>
               {session && (
-                <Link href="/dashboard" className="px-3 py-2.5 text-sm text-text-tertiary hover:text-text-primary hover:bg-white/[0.03] rounded-lg transition-colors" onClick={() => setMobileOpen(false)}>
-                  Dashboard
-                </Link>
+                <>
+                  <Link href="/dashboard" className={navLinkClass(dashboardActive, true)} aria-current={dashboardActive ? "page" : undefined} onClick={() => setMobileOpen(false)}>
+                    Dashboard
+                  </Link>
+                  <Link href="/dashboard/notifications" className={navLinkClass(pathname.startsWith("/dashboard/notifications"), true)} onClick={() => setMobileOpen(false)}>
+                    Notifications
+                  </Link>
+                </>
               )}
             </nav>
           </div>

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import {
+  isQuizUnlocked,
+  isSectionUnlocked,
+  areQuizLessonsComplete,
+  type QuizUnlockContext,
+} from "@/lib/quiz-progress";
 
 export async function GET(
   req: NextRequest,
@@ -14,12 +20,11 @@ export async function GET(
 
     const { courseId } = await params;
 
-    // Check enrollment
     const enrollment = await db.enrollment.findUnique({
       where: { userId_courseId: { userId: session.user.id, courseId } },
     });
 
-    if (!enrollment || !["ACTIVE", "COMPLETED"].includes(enrollment.status)) {
+    if (!enrollment || !["ACTIVE", "COMPLETED", "APPROVED"].includes(enrollment.status)) {
       return NextResponse.json({ error: "Not enrolled" }, { status: 403 });
     }
 
@@ -35,6 +40,17 @@ export async function GET(
             },
           },
         },
+        quizzes: {
+          where: { isActive: true },
+          orderBy: { order: "asc" },
+          include: {
+            _count: { select: { questions: true } },
+            attempts: {
+              where: { userId: session.user.id },
+              orderBy: { score: "desc" },
+            },
+          },
+        },
       },
     });
 
@@ -42,7 +58,6 @@ export async function GET(
       return NextResponse.json({ error: "Course not found" }, { status: 404 });
     }
 
-    // Get completed lessons
     const allLessonIds = course.sections.flatMap((s) => s.lessons.map((l) => l.id));
     const completedProgress = await db.lessonProgress.findMany({
       where: {
@@ -53,10 +68,62 @@ export async function GET(
       select: { lessonId: true },
     });
 
+    const completedLessonIds = completedProgress.map((p) => p.lessonId);
+    const maxSectionOrder = course.sections.reduce(
+      (max, s) => Math.max(max, s.order),
+      0
+    );
+
+    const unlockCtx: QuizUnlockContext = {
+      maxSectionOrder,
+      sections: course.sections.map((s) => ({
+        order: s.order,
+        lessonIds: s.lessons.map((l) => l.id),
+      })),
+      completedLessonIds,
+    };
+
+    const quizPassInfo = course.quizzes.map((q) => ({
+      id: q.id,
+      order: q.order,
+      passed: q.attempts.some((a) => a.passed),
+    }));
+
+    const quizzes = course.quizzes.map((q) => {
+      const best = q.attempts[0];
+      const chapterComplete = areQuizLessonsComplete(q.order, unlockCtx);
+      return {
+        id: q.id,
+        title: q.title,
+        description: q.description,
+        order: q.order,
+        timeLimit: q.timeLimit,
+        passingScore: q.passingScore,
+        maxAttempts: q.maxAttempts,
+        questionCount: q._count.questions,
+        attemptsUsed: q.attempts.length,
+        passed: quizPassInfo.find((p) => p.id === q.id)?.passed ?? false,
+        bestScore: best?.score ?? null,
+        chapterComplete,
+        unlocked: isQuizUnlocked(q.order, quizPassInfo, unlockCtx),
+      };
+    });
+
+    const sections = course.sections.map((section) => ({
+      ...section,
+      unlocked: isSectionUnlocked(section.order, quizPassInfo),
+    }));
+
     return NextResponse.json({
-      ...course,
+      id: course.id,
+      title: course.title,
+      slug: course.slug,
+      description: course.description,
+      instructor: course.instructor,
+      sections,
+      quizzes,
       enrollment: { progress: enrollment.progress, status: enrollment.status },
-      completedLessons: completedProgress.map((p) => p.lessonId),
+      completedLessons: completedLessonIds,
     });
   } catch (error) {
     console.error("Learn fetch error:", error);

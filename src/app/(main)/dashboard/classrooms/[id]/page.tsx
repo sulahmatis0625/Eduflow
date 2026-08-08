@@ -26,7 +26,6 @@ import {
   Layers,
   Video,
   TrendingUp,
-  ChevronRight,
   CircleDot,
   Megaphone,
   MessageSquare,
@@ -392,12 +391,6 @@ export default async function ClassroomDetailPage({
         </div>
 
         <div className="flex items-center gap-3 flex-shrink-0">
-          <Link href={`/courses/${course.slug}`}>
-            <Button variant="outline" size="sm">
-              <ChevronRight className="h-4 w-4 mr-1" />
-              View Course
-            </Button>
-          </Link>
           {!activeLiveSession && (
             <StartLiveButton courseId={course.id} courseTitle={course.title} />
           )}

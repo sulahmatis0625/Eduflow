@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { issueCertificateIfEligible } from "@/lib/certificates";
+import { courseRequiresFinalQuiz } from "@/lib/course-completion";
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,7 +36,6 @@ export async function POST(req: NextRequest) {
 
     const courseId = lesson.section.courseId;
 
-    // Update or create lesson progress
     const progress = await db.lessonProgress.upsert({
       where: {
         userId_lessonId: { userId: session.user.id, lessonId },
@@ -53,7 +54,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Calculate overall course progress
     const allLessons = lesson.section.course.sections.flatMap((s) => s.lessons);
     const totalLessons = allLessons.length;
 
@@ -65,18 +65,25 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const courseProgress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+    const courseProgress =
+      totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-    // Update enrollment progress
+    const needsFinal =
+      courseProgress === 100
+        ? await courseRequiresFinalQuiz(courseId)
+        : false;
+
     await db.enrollment.updateMany({
       where: { userId: session.user.id, courseId },
       data: {
         progress: courseProgress,
-        ...(courseProgress === 100 ? { status: "COMPLETED", completedAt: new Date() } : {}),
+        // Complete + certify from lessons only when the course has no quizzes
+        ...(courseProgress === 100 && !needsFinal
+          ? { status: "COMPLETED", completedAt: new Date(), grade: 100 }
+          : {}),
       },
     });
 
-    // Award XP for completing a lesson
     if (completed) {
       await db.user.update({
         where: { id: session.user.id },
@@ -84,25 +91,53 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // If course completed, award bonus XP
+    let certificateId: string | null = null;
+
     if (courseProgress === 100) {
       await db.user.update({
         where: { id: session.user.id },
         data: { xp: { increment: 50 } },
       });
 
-      await db.notification.create({
-        data: {
-          userId: session.user.id,
-          title: "Course Completed!",
-          message: `Congratulations! You've completed "${lesson.section.course.title}". Check if you qualify for a certificate!`,
-          type: "SUCCESS",
-          link: `/dashboard/certificates`,
-        },
-      });
+      if (!needsFinal) {
+        const certificate = await issueCertificateIfEligible(
+          session.user.id,
+          courseId,
+          100
+        );
+        certificateId = certificate?.certificateId ?? null;
+
+        await db.notification.create({
+          data: {
+            userId: session.user.id,
+            title: "Course Completed!",
+            message: certificate
+              ? `Congratulations! You've completed "${lesson.section.course.title}" and your certificate is ready.`
+              : `Congratulations! You've completed "${lesson.section.course.title}".`,
+            type: "SUCCESS",
+            link: certificate
+              ? "/dashboard/certificates"
+              : `/courses/${lesson.section.course.slug}`,
+          },
+        });
+      } else {
+        await db.notification.create({
+          data: {
+            userId: session.user.id,
+            title: "All lessons complete!",
+            message: `You've finished every lesson in "${lesson.section.course.title}". Pass the final exam to earn your certificate.`,
+            type: "INFO",
+            link: `/learn/${courseId}`,
+          },
+        });
+      }
     }
 
-    return NextResponse.json({ progress: courseProgress, lessonProgress: progress });
+    return NextResponse.json({
+      progress: courseProgress,
+      lessonProgress: progress,
+      certificateId,
+    });
   } catch (error) {
     console.error("Progress update error:", error);
     return NextResponse.json({ error: "Failed to update progress" }, { status: 500 });

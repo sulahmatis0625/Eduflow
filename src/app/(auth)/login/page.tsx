@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,8 +18,11 @@ import {
   Award,
 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isTrial = searchParams.get("trial") === "1";
+  const justRegistered = searchParams.get("registered") === "true";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -34,25 +37,39 @@ export default function LoginPage() {
     const result = await signIn("credentials", {
       email,
       password,
-      callbackUrl: "/dashboard",
       redirect: false,
     });
 
     if (result?.error) {
-      setError(result.error === "Configuration" ? "Authentication is unavailable right now. Please try again later." : "Invalid email or password");
+      setError(
+        result.error === "Configuration"
+          ? "Authentication is unavailable right now. Please try again later."
+          : "Invalid email or password"
+      );
       setLoading(false);
+      return;
+    }
+
+    // After credentials sign-in, claim free trial (if any) then land on My Courses
+    if (isTrial) {
+      // Brief pause so the session cookie is available to the enroll API
+      await new Promise((r) => setTimeout(r, 150));
+      try {
+        await fetch("/api/enroll/free-trial", { method: "POST" });
+      } catch {
+        // Enrollment is best-effort; still send them to My Courses
+      }
+      router.push("/dashboard/courses");
     } else {
       router.push("/dashboard");
-      router.refresh();
     }
+    router.refresh();
   };
 
   return (
     <div className="min-h-screen flex bg-surface-0 dot-grid">
-      {/* Left Panel - Form */}
       <div className="flex-1 flex items-center justify-center p-8 relative z-10">
         <div className="w-full max-w-md">
-          {/* Logo */}
           <Link href="/" className="flex items-center gap-3 mb-10">
             <div className="relative">
               <div className="bg-brand/10 border border-brand/20 p-2.5 rounded-xl">
@@ -64,20 +81,28 @@ export default function LoginPage() {
             </span>
           </Link>
 
-          {/* Heading */}
-          <h1 className="text-3xl font-bold text-white mb-2">Welcome back</h1>
+          <h1 className="text-3xl font-bold text-white mb-2">
+            {isTrial ? "Sign in to start your free trial" : "Welcome back"}
+          </h1>
           <p className="text-text-secondary mb-8">
-            Sign in to continue your learning journey
+            {isTrial
+              ? "We’ll add the free starter course to My Courses after you sign in."
+              : "Sign in to continue your learning journey"}
           </p>
 
-          {/* Error */}
+          {justRegistered && (
+            <div className="mb-4 p-3 rounded-lg bg-brand/10 border border-brand/20 text-brand text-sm">
+              Account created
+              {isTrial ? " and free course reserved" : ""}. Sign in to continue.
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
               {error}
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             <Input
               label="Email"
@@ -134,89 +159,40 @@ export default function LoginPage() {
               size="lg"
               isLoading={loading}
             >
-              Sign In
+              {isTrial ? "Sign in & open My Courses" : "Sign In"}
             </Button>
           </form>
 
-          {/* Sign up link */}
           <div className="mt-6 text-center">
             <p className="text-sm text-white/40">
               Don&apos;t have an account?{" "}
               <Link
-                href="/register"
+                href={isTrial ? "/register?trial=1" : "/register"}
                 className="text-brand hover:text-brand/80 font-medium transition-colors"
               >
                 Sign up for free
               </Link>
             </p>
           </div>
-
-          {/* Demo accounts */}
-          <div className="mt-8 p-4 rounded-xl bg-surface-2 border border-white/[0.06]">
-            <p className="text-sm text-text-secondary mb-3">
-              Demo Accounts
-            </p>
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail("admin@eduflow.com");
-                  setPassword("password123");
-                }}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-white/60 hover:bg-white/[0.03] transition-colors flex items-center gap-2"
-              >
-                <span className="text-xs font-medium text-purple-400 min-w-[72px]">
-                  Admin
-                </span>
-                <span>admin@eduflow.com</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail("instructor@eduflow.com");
-                  setPassword("password123");
-                }}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-white/60 hover:bg-white/[0.03] transition-colors flex items-center gap-2"
-              >
-                <span className="text-xs font-medium text-brand min-w-[72px]">
-                  Instructor
-                </span>
-                <span>instructor@eduflow.com</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail("student@eduflow.com");
-                  setPassword("password123");
-                }}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-white/60 hover:bg-white/[0.03] transition-colors flex items-center gap-2"
-              >
-                <span className="text-xs font-medium text-gold min-w-[72px]">
-                  Student
-                </span>
-                <span>student@eduflow.com</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Right Panel - Decorative */}
       <div className="hidden lg:flex flex-1 bg-surface-1 items-center justify-center p-12 relative overflow-hidden">
-        {/* Brand radial glow */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,255,204,0.05)_0%,_transparent_70%)]" />
-
-        {/* Subtle grid overlay */}
-        <div className="absolute inset-0 opacity-[0.03]" style={{
-          backgroundImage: "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)",
-          backgroundSize: "60px 60px",
-        }} />
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)",
+            backgroundSize: "60px 60px",
+          }}
+        />
 
         <div className="max-w-md relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand/10 border border-brand/20 mb-6">
             <Sparkles className="h-3.5 w-3.5 text-brand" />
             <span className="text-xs font-medium text-brand">
-              Platform
+              {isTrial ? "Free trial" : "Platform"}
             </span>
           </div>
 
@@ -258,10 +234,23 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Decorative glow orb */}
           <div className="absolute -bottom-20 -right-20 w-60 h-60 rounded-full bg-brand/[0.04] blur-3xl" />
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-surface-0">
+          <div className="animate-spin h-8 w-8 border-2 border-brand border-t-transparent rounded-full" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

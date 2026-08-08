@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { TrialVideoModal } from "@/components/home/trial-video-modal";
@@ -9,8 +10,15 @@ import {
   TrendingUp, Video, MessageSquare, BarChart3,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { formatPrice } from "@/lib/utils";
 
 export default async function HomePage() {
+  const session = await auth();
+  if (session?.user) {
+    redirect("/dashboard");
+  }
+
   const [courseCount, userCount, certificateCount] = await Promise.all([
     db.course.count({ where: { status: "PUBLISHED" } }).catch(() => 0),
     db.user.count().catch(() => 0),
@@ -272,8 +280,7 @@ export default async function HomePage() {
                     : 0;
                 return (
                   <Link key={course.id} href={`/courses/${course.slug}`}>
-                    <div className="group bg-surface-2 border border-white/[0.06] rounded-xl overflow-hidden hover:border-brand/20 transition-all duration-300">
-                      {/* Thumbnail */}
+                    <div className="group bg-surface-2 border border-white/[0.06] rounded-xl overflow-hidden hover:border-brand/20 transition-all duration-300 h-full flex flex-col">
                       <div className="relative h-48 bg-surface-3 overflow-hidden">
                         {course.thumbnail ? (
                           <img
@@ -286,38 +293,22 @@ export default async function HomePage() {
                             <BookOpen className="h-12 w-12 text-text-muted" />
                           </div>
                         )}
-                        {/* Gradient overlay */}
                         <div className="absolute inset-0 bg-gradient-to-t from-surface-2/80 to-transparent" />
-
-                        {/* Badges */}
-                        {course.isFree && (
-                          <span className="absolute top-3 left-3 px-2.5 py-1 bg-brand text-surface-0 text-xs font-semibold rounded-md">
-                            Free
-                          </span>
-                        )}
                         {course.level && (
                           <span className="absolute top-3 right-3 px-2.5 py-1 bg-white/10 backdrop-blur-sm text-white/80 text-xs rounded-md">
-                            {course.level}
+                            {course.level.charAt(0) + course.level.slice(1).toLowerCase()}
                           </span>
                         )}
                       </div>
 
-                      {/* Content */}
-                      <div className="p-5">
-                        {course.category && (
-                          <span className="text-brand text-xs font-medium">
-                            {course.category.name}
-                          </span>
-                        )}
-                        <h3 className="font-semibold text-text-primary mt-1.5 mb-2 line-clamp-2 group-hover:text-brand transition-colors">
+                      <div className="p-5 flex flex-col flex-1 gap-3">
+                        <h3 className="font-semibold text-text-primary line-clamp-2 group-hover:text-brand transition-colors">
                           {course.title}
                         </h3>
-                        <p className="text-sm text-text-tertiary mb-3 line-clamp-2">
-                          {course.shortDescription || course.description}
+                        <p className="text-sm text-text-tertiary truncate">
+                          {course.instructor.name}
                         </p>
-
-                        {/* Rating */}
-                        <div className="flex items-center gap-2 mb-4">
+                        <div className="flex items-center gap-2">
                           <div className="flex items-center gap-0.5">
                             {[1, 2, 3, 4, 5].map((s) => (
                               <Star
@@ -337,15 +328,19 @@ export default async function HomePage() {
                             ({course.reviews.length})
                           </span>
                         </div>
-
-                        {/* Footer */}
-                        <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
-                          <span className="text-sm text-text-tertiary">
-                            {course.instructor.name}
-                          </span>
-                          <span className="text-lg font-bold text-brand">
-                            {course.isFree ? "Free" : `$${course.price}`}
-                          </span>
+                        <div className="mt-auto pt-4 border-t border-white/[0.06]">
+                          {course.isFree ? (
+                            <span className="inline-flex px-2.5 py-1 rounded-md bg-brand/15 text-brand text-sm font-semibold">
+                              Free
+                            </span>
+                          ) : (
+                            <span className="text-lg font-bold text-brand">
+                              {formatPrice(
+                                course.discountPrice ?? course.price,
+                                course.currency || "ETB"
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -429,7 +424,7 @@ export default async function HomePage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
-              href="/register"
+              href="/register?trial=1"
               className="inline-flex items-center justify-center gap-2 px-10 py-4 bg-gold text-surface-0 font-semibold text-sm rounded-full hover:scale-[1.03] transition-all duration-300"
             >
               Get Started Free
@@ -445,7 +440,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <Footer />
+      <Footer variant="full" />
     </div>
   );
 }

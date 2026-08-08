@@ -60,36 +60,41 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         if (!email || !password) return null;
 
+        // Prefer real DB users when DATABASE_URL is configured (seeded demo accounts).
+        if (hasDatabase) {
+          const user = await db.user.findFirst({
+            where: {
+              email: {
+                equals: email,
+                mode: "insensitive",
+              },
+            },
+          });
+
+          if (user?.hashedPassword) {
+            const isActive = user.isActive ?? true;
+            if (!isActive) return null;
+
+            const isValid = await bcrypt.compare(password, user.hashedPassword);
+            if (!isValid) return null;
+
+            return {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+              image: user.image,
+              role: user.role,
+            };
+          }
+        }
+
+        // Fallback demo users only when there is no DB (or user not found in DB).
         const demoUser = demoUsers[email as keyof typeof demoUsers];
         if (demoUser && password === "password123") {
           return demoUser;
         }
 
-        const user = await db.user.findFirst({
-          where: {
-            email: {
-              equals: email,
-              mode: "insensitive",
-            },
-          },
-        });
-
-        if (!user || !user.hashedPassword) return null;
-
-        const isActive = user.isActive ?? true;
-        if (!isActive) return null;
-
-        const isValid = await bcrypt.compare(password, user.hashedPassword);
-
-        if (!isValid) return null;
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.image,
-          role: user.role,
-        };
+        return null;
       },
     }),
   ],

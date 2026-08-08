@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { formatPrice, formatDuration, formatDate } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { StarRating } from "@/components/ui/star-rating";
 import { Progress } from "@/components/ui/progress";
 import { Tabs } from "@/components/ui/tabs";
 import { EnrollButton } from "@/components/course/enroll-button";
+import { CoursePreviewMedia } from "@/components/course/course-preview-media";
 import {
   BookOpen, Clock, Users, Award, BarChart3,
   PlayCircle, FileText, CheckCircle, Lock,
@@ -136,6 +137,15 @@ export default async function CourseDetailPage({ params }: CoursePageProps) {
 
   const course = courseResult;
 
+  // Instructors manage their own courses in the dashboard — not the student catalog page
+  if (
+    session?.user?.id &&
+    course.instructorId === session.user.id &&
+    ["INSTRUCTOR", "ADMIN"].includes(session.user.role)
+  ) {
+    redirect(`/dashboard/classrooms/${course.id}`);
+  }
+
   // Extract typed arrays from the course result
   const sections: CourseSection[] = course.sections;
   const reviews: CourseReview[] = course.reviews;
@@ -201,6 +211,9 @@ export default async function CourseDetailPage({ params }: CoursePageProps) {
 
   const isEnrolled = enrollment && ["ACTIVE", "APPROVED", "COMPLETED"].includes(enrollment.status);
   const effectivePrice = course.isFree ? 0 : (course.discountPrice ?? course.price);
+  const firstLessonId =
+    sections.find((s) => s.lessons.length > 0)?.lessons[0]?.id ?? null;
+  const priceCurrency = course.currency || "ETB";
 
   // --- Tab content ---
 
@@ -536,27 +549,11 @@ export default async function CourseDetailPage({ params }: CoursePageProps) {
             {/* Course Card / Sidebar */}
             <div className="lg:w-[380px] flex-shrink-0">
               <Card className="overflow-hidden shadow-[0_0_20px_rgba(0,255,204,0.05)] lg:sticky lg:top-24">
-                {/* Thumbnail */}
-                <div className="relative h-52 bg-gradient-to-br from-surface-3 to-surface-2 overflow-hidden">
-                  {course.thumbnail ? (
-                    <img
-                      src={course.thumbnail}
-                      alt={course.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <BookOpen className="h-16 w-16 text-text-muted" />
-                    </div>
-                  )}
-                  {course.previewVideo && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                      <div className="bg-white/10 backdrop-blur-sm rounded-full p-3 border border-white/[0.08]">
-                        <PlayCircle className="h-8 w-8 text-brand" />
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <CoursePreviewMedia
+                  title={course.title}
+                  thumbnail={course.thumbnail}
+                  previewVideo={course.previewVideo}
+                />
 
                 <CardContent className="p-6 space-y-4">
                   {/* Price */}
@@ -566,16 +563,23 @@ export default async function CourseDetailPage({ params }: CoursePageProps) {
                     ) : (
                       <>
                         <span className="text-3xl font-bold text-text-primary">
-                          {formatPrice(effectivePrice)}
+                          {formatPrice(effectivePrice, priceCurrency)}
                         </span>
-                        {course.discountPrice && (
+                        {course.discountPrice != null &&
+                          Number(course.discountPrice) < Number(course.price) && (
                           <span className="text-lg text-text-tertiary line-through">
-                            {formatPrice(course.price)}
+                            {formatPrice(course.price, priceCurrency)}
                           </span>
                         )}
-                        {course.discountPrice && (
+                        {course.discountPrice != null &&
+                          Number(course.discountPrice) < Number(course.price) && (
                           <Badge variant="danger" size="md">
-                            {Math.round(((course.price - course.discountPrice) / course.price) * 100)}% off
+                            {Math.round(
+                              ((Number(course.price) - Number(course.discountPrice)) /
+                                Number(course.price)) *
+                                100
+                            )}
+                            % off
                           </Badge>
                         )}
                       </>
@@ -589,8 +593,11 @@ export default async function CourseDetailPage({ params }: CoursePageProps) {
                     isFree={course.isFree || effectivePrice === 0}
                     isEnrolled={!!isEnrolled}
                     enrollmentStatus={enrollment?.status ?? null}
+                    firstLessonId={firstLessonId}
                     price={effectivePrice}
-                    formattedPrice={course.isFree ? undefined : formatPrice(effectivePrice)}
+                    formattedPrice={
+                      course.isFree ? undefined : formatPrice(effectivePrice, priceCurrency)
+                    }
                     className="w-full"
                   />
 

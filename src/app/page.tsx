@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { formatPrice } from "@/lib/utils";
 
 export default async function HomePage() {
   const session = await auth();
@@ -32,13 +31,13 @@ export default async function HomePage() {
       category: true,
       reviews: true,
     },
-    take: 6,
+    take: 2,
     orderBy: { createdAt: "desc" },
   }).catch(() => []);
 
   const categories = await db.category.findMany({
-    include: { _count: { select: { courses: true } } },
-    take: 8,
+    select: { id: true, name: true, slug: true, icon: true },
+    take: 24,
   }).catch(() => []);
 
   return (
@@ -209,13 +208,11 @@ export default async function HomePage() {
           CATEGORIES SECTION
       ═══════════════════════════════════════════ */}
       {categories.length > 0 && (
-        <section className="py-24 bg-surface-1">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center justify-between mb-12">
+        <section className="py-24 bg-surface-1 overflow-hidden">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 mb-10">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-brand text-sm font-medium mb-2">
-                  Explore
-                </p>
+                <p className="text-brand text-sm font-medium mb-2">Explore</p>
                 <h2 className="text-3xl font-bold">Browse Categories</h2>
               </div>
               <Link
@@ -226,22 +223,21 @@ export default async function HomePage() {
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {categories.map((cat) => (
+          </div>
+          <div className="relative w-full overflow-hidden">
+            <div className="flex w-max animate-marquee hover:[animation-play-state:paused]">
+              {[...categories, ...categories].map((cat, i) => (
                 <Link
-                  key={cat.id}
+                  key={`${cat.id}-${i}`}
                   href={`/courses?category=${cat.slug}`}
-                  className="group flex items-center gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-brand/30 transition-all duration-300"
+                  className="group mx-2 flex shrink-0 flex-col items-center justify-center gap-3 w-36 h-36 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-brand/40 hover:bg-brand/5 transition-all duration-300"
                 >
-                  <span className="text-2xl">{cat.icon || "📚"}</span>
-                  <div>
-                    <p className="font-medium text-text-primary group-hover:text-brand transition-colors">
-                      {cat.name}
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      {cat._count.courses} courses
-                    </p>
-                  </div>
+                  <span className="text-3xl leading-none" aria-hidden>
+                    {cat.icon || "📚"}
+                  </span>
+                  <p className="text-sm font-medium text-text-primary text-center px-2 group-hover:text-brand transition-colors line-clamp-2">
+                    {cat.name}
+                  </p>
                 </Link>
               ))}
             </div>
@@ -250,7 +246,7 @@ export default async function HomePage() {
       )}
 
       {/* ═══════════════════════════════════════════
-          FEATURED COURSES SECTION
+          NEWLY ADDED COURSES
       ═══════════════════════════════════════════ */}
       {featuredCourses.length > 0 && (
         <section className="py-24 bg-surface-0">
@@ -258,9 +254,11 @@ export default async function HomePage() {
             <div className="flex items-center justify-between mb-12">
               <div>
                 <p className="text-brand text-sm font-medium mb-2">
-                  Top Picks
+                  Fresh releases
                 </p>
-                <h2 className="text-3xl font-bold">Featured Courses</h2>
+                <h2 className="text-3xl font-bold">
+                  Newly added to the collection
+                </h2>
               </div>
               <Link
                 href="/courses"
@@ -271,7 +269,7 @@ export default async function HomePage() {
               </Link>
             </div>
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 gap-6 max-w-4xl">
               {featuredCourses.map((course) => {
                 const avgRating =
                   course.reviews.length > 0
@@ -308,7 +306,7 @@ export default async function HomePage() {
                         <p className="text-sm text-text-tertiary truncate">
                           {course.instructor.name}
                         </p>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 mt-auto">
                           <div className="flex items-center gap-0.5">
                             {[1, 2, 3, 4, 5].map((s) => (
                               <Star
@@ -327,20 +325,6 @@ export default async function HomePage() {
                           <span className="text-xs text-text-muted">
                             ({course.reviews.length})
                           </span>
-                        </div>
-                        <div className="mt-auto pt-4 border-t border-white/[0.06]">
-                          {course.isFree ? (
-                            <span className="inline-flex px-2.5 py-1 rounded-md bg-brand/15 text-brand text-sm font-semibold">
-                              Free
-                            </span>
-                          ) : (
-                            <span className="text-lg font-bold text-brand">
-                              {formatPrice(
-                                course.discountPrice ?? course.price,
-                                course.currency || "ETB"
-                              )}
-                            </span>
-                          )}
                         </div>
                       </div>
                     </div>

@@ -280,7 +280,7 @@ export default function AdminCertificatesPage() {
                             variant="ghost"
                             onClick={() =>
                               window.open(
-                                `/certificates/${cert.certificateId}`,
+                                `/certificates/verify/${cert.certificateId}`,
                                 "_blank"
                               )
                             }
@@ -382,7 +382,7 @@ export default function AdminCertificatesPage() {
                 variant="outline"
                 onClick={() =>
                   window.open(
-                    `/certificates/${selectedCert.certificateId}`,
+                    `/certificates/verify/${selectedCert.certificateId}`,
                     "_blank"
                   )
                 }

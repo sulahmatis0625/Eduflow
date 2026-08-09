@@ -242,16 +242,6 @@ export function ClassroomDiscussions({ courseId }: ClassroomDiscussionsProps) {
 
   return (
     <div className="space-y-4">
-      {/* New Discussion Button */}
-      {!showForm && (
-        <div className="flex justify-end">
-          <Button variant="primary" size="sm" onClick={() => setShowForm(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Discussion
-          </Button>
-        </div>
-      )}
-
       {/* Inline Form */}
       {showForm && (
         <Card className="border-brand/20 bg-brand/[0.02]">
@@ -332,15 +322,31 @@ export function ClassroomDiscussions({ courseId }: ClassroomDiscussionsProps) {
           description="Start a discussion to engage with your classroom community."
           action={
             !showForm ? (
-              <Button variant="outline" size="sm" onClick={() => setShowForm(true)}>
+              <Button
+                variant="success"
+                size="sm"
+                onClick={() => setShowForm(true)}
+              >
                 <Plus className="h-4 w-4 mr-2" />
-                Start First Discussion
+                Start discussion
               </Button>
             ) : undefined
           }
         />
       ) : (
         <div className="space-y-3">
+          {!showForm && (
+            <div className="flex justify-start">
+              <Button
+                variant="success"
+                size="sm"
+                onClick={() => setShowForm(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Start discussion
+              </Button>
+            </div>
+          )}
           {discussions.map((discussion) => {
             const isExpanded = expandedId === discussion.id;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,10 @@ import {
   ChevronDown, ChevronUp, Lock, Video, PenLine, List,
   Award, HelpCircle, GraduationCap,
 } from "lucide-react";
-import { LessonVideoPlayer } from "@/components/course/lesson-video-player";
+import {
+  LessonVideoPlayer,
+  type WatchProgressUpdate,
+} from "@/components/course/lesson-video-player";
 
 interface Lesson {
   id: string;
@@ -61,6 +64,9 @@ interface CourseData {
     status: string;
   } | null;
   completedLessons: string[];
+  lessonWatchTimes?: Record<string, number>;
+  /** Demo courses (e.g. freeCodeCamp path) skip the 90% watch gate */
+  skipWatchGate?: boolean;
 }
 
 export default function LearnPage({ params }: { params: Promise<{ courseId: string; lessonId: string }> }) {
@@ -74,6 +80,13 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
   const [activeTab, setActiveTab] = useState<"content" | "notes" | "discussion">("content");
   const [loading, setLoading] = useState(true);
   const [resolvedParams, setResolvedParams] = useState<{ courseId: string; lessonId: string } | null>(null);
+  const [watchPercent, setWatchPercent] = useState(0);
+  const [watchTime, setWatchTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [completeError, setCompleteError] = useState("");
+  const [marking, setMarking] = useState(false);
+  const lastSavedWatchRef = useRef(0);
+  const saveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     params.then(setResolvedParams);
@@ -139,25 +152,128 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
   const sectionQuiz =
     course?.quizzes.find((q) => currentSection && q.order === currentSection.order) || null;
 
+  // Reset local watch UI when switching lessons; hydrate from saved progress
+  useEffect(() => {
+    if (!currentLesson || !course) return;
+    const saved = course.lessonWatchTimes?.[currentLesson.id] ?? 0;
+    setWatchTime(saved);
+    lastSavedWatchRef.current = saved;
+    const estDuration =
+      currentLesson.duration > 0 ? currentLesson.duration * 60 : 0;
+    setVideoDuration(estDuration);
+    setWatchPercent(
+      estDuration > 0
+        ? Math.min(100, Math.round((saved / estDuration) * 100))
+        : 0
+    );
+    setCompleteError("");
+  }, [currentLesson?.id, course?.id]);
+
+  const persistWatchTime = useCallback(
+    async (seconds: number, duration: number) => {
+      if (!currentLesson || !resolvedParams) return;
+      if (seconds <= lastSavedWatchRef.current) return;
+      lastSavedWatchRef.current = seconds;
+      try {
+        await fetch("/api/progress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lessonId: currentLesson.id,
+            watchTime: seconds,
+            videoDuration: duration > 0 ? Math.floor(duration) : undefined,
+          }),
+        });
+        setCourse((prev) =>
+          prev
+            ? {
+                ...prev,
+                lessonWatchTimes: {
+                  ...(prev.lessonWatchTimes || {}),
+                  [currentLesson.id]: seconds,
+                },
+              }
+            : prev
+        );
+      } catch {
+        // ignore transient save errors
+      }
+    },
+    [currentLesson, resolvedParams]
+  );
+
+  const handleWatchProgress = useCallback(
+    (update: WatchProgressUpdate) => {
+      setWatchTime(update.watchTime);
+      setWatchPercent(update.percent);
+      setVideoDuration(update.duration);
+      if (update.percent >= 90) setCompleteError("");
+
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = window.setTimeout(() => {
+        void persistWatchTime(update.watchTime, update.duration);
+      }, 4000);
+    },
+    [persistWatchTime]
+  );
+
+  // Flush watch progress when leaving the lesson
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      if (currentLesson && watchTime > lastSavedWatchRef.current) {
+        void persistWatchTime(watchTime, videoDuration);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLesson?.id]);
+
   const markComplete = async () => {
-    if (!currentLesson || !resolvedParams) return;
-    await fetch("/api/progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lessonId: currentLesson.id, completed: true }),
-    });
-    // Refetch so chapter quizzes appear as soon as all videos are done
-    const res = await fetch(`/api/courses/${resolvedParams.courseId}/learn`);
-    if (res.ok) {
-      const data = await res.json();
-      setCourse(data);
-    } else if (course) {
-      setCourse({
-        ...course,
-        completedLessons: [
-          ...new Set([...course.completedLessons, currentLesson.id]),
-        ],
+    if (!currentLesson || !resolvedParams || marking) return;
+    setCompleteError("");
+
+    const isVideo =
+      currentLesson.type === "VIDEO" && Boolean(currentLesson.videoUrl);
+    if (isVideo && !course?.skipWatchGate && watchPercent < 90) {
+      setCompleteError(
+        `Not completed yet — watch at least 90% of the video first (you've watched about ${watchPercent}%).`
+      );
+      return;
+    }
+
+    setMarking(true);
+    try {
+      const res = await fetch("/api/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lessonId: currentLesson.id,
+          completed: true,
+          watchTime,
+          videoDuration: videoDuration > 0 ? Math.floor(videoDuration) : undefined,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok) {
+        setCompleteError(data.error || "Could not mark this lesson complete.");
+        return;
+      }
+
+      const learnRes = await fetch(
+        `/api/courses/${resolvedParams.courseId}/learn`
+      );
+      if (learnRes.ok) {
+        setCourse(await learnRes.json());
+      } else if (course) {
+        setCourse({
+          ...course,
+          completedLessons: [
+            ...new Set([...course.completedLessons, currentLesson.id]),
+          ],
+        });
+      }
+    } finally {
+      setMarking(false);
     }
   };
 
@@ -194,6 +310,16 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
     ? [...course.quizzes].sort((a, b) => b.order - a.order)[0]
     : null;
   const chapterQuizOrders = new Set(course.sections.map((s) => s.order));
+  const isVideoLesson =
+    currentLesson.type === "VIDEO" && Boolean(currentLesson.videoUrl);
+  const skipWatchGate = Boolean(course.skipWatchGate);
+  const canMarkComplete =
+    isCompleted ||
+    !isVideoLesson ||
+    skipWatchGate ||
+    watchPercent >= 90;
+  const initialWatchTime =
+    course.lessonWatchTimes?.[currentLesson.id] ?? watchTime;
 
   return (
     <div className="min-h-screen bg-surface-0 text-text-primary flex flex-col">
@@ -212,17 +338,33 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
             <Progress value={progressPercent} size="sm" className="w-32" />
             <span className="text-xs text-text-muted">{progressPercent}%</span>
           </div>
+          {isVideoLesson && !isCompleted && !skipWatchGate && (
+            <span className="hidden md:inline text-xs text-text-muted">
+              Watched {watchPercent}%
+            </span>
+          )}
           <Button
             size="sm"
             variant={isCompleted ? "success" : "primary"}
             onClick={markComplete}
-            disabled={isCompleted}
+            disabled={isCompleted || marking}
+            title={
+              !canMarkComplete
+                ? "Watch at least 90% of the video to mark complete"
+                : undefined
+            }
+            className={!canMarkComplete && !isCompleted ? "opacity-70" : undefined}
           >
             <CheckCircle className="h-4 w-4 mr-1" />
-            {isCompleted ? "Completed" : "Mark Complete"}
+            {isCompleted ? "Completed" : marking ? "Saving…" : "Mark Complete"}
           </Button>
         </div>
       </div>
+      {completeError && (
+        <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-sm text-amber-200">
+          {completeError}
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Main Content */}
@@ -233,8 +375,11 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
               currentLesson.videoUrl ? (
                 <div className="relative w-full max-w-4xl aspect-video bg-black overflow-hidden shadow-lg">
                   <LessonVideoPlayer
+                    key={currentLesson.id}
                     url={currentLesson.videoUrl}
                     title={currentLesson.title}
+                    initialWatchTime={initialWatchTime}
+                    onProgress={handleWatchProgress}
                   />
                 </div>
               ) : (
@@ -499,9 +644,6 @@ export default function LearnPage({ params }: { params: Promise<{ courseId: stri
                             <div className="h-4 w-4 rounded-full border border-white/[0.06] shrink-0" />
                           )}
                           <span className="truncate text-left">{lesson.title}</span>
-                          {lesson.duration > 0 && (
-                            <span className="text-xs text-text-muted ml-auto shrink-0">{lesson.duration}m</span>
-                          )}
                         </button>
                       );
                     })}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,17 +18,17 @@ import {
   type QuizQuestionDraft,
 } from "@/components/dashboard/quiz-question-editor";
 import {
+  CourseChapterOrganizer,
+  type OrganizerChapter,
+} from "@/components/dashboard/course-chapter-organizer";
+import {
   ArrowLeft,
   ArrowRight,
   Check,
-  ChevronDown,
-  ChevronUp,
-  FolderPlus,
+  Layers,
   Link2,
+  ListTree,
   Loader2,
-  PlayCircle,
-  Scissors,
-  Trash2,
   Video,
   BookOpen,
   Rocket,
@@ -60,6 +60,7 @@ function emptyAssessment(title: string): AssessmentDraft {
 }
 
 type PlaylistVideo = {
+  id: string;
   videoId: string;
   title: string;
   description: string;
@@ -75,6 +76,8 @@ type Chapter = {
   lessons: PlaylistVideo[];
 };
 
+type ContentMode = "choose" | "playlist" | "customize";
+
 const levelOptions = [
   { value: "BEGINNER", label: "Beginner" },
   { value: "INTERMEDIATE", label: "Intermediate" },
@@ -83,7 +86,7 @@ const levelOptions = [
 
 const STEPS = [
   { id: 1, label: "Course info" },
-  { id: 2, label: "YouTube playlist" },
+  { id: 2, label: "Videos" },
   { id: 3, label: "Chapters & preview" },
   { id: 4, label: "Assessments" },
   { id: 5, label: "Publish" },
@@ -91,6 +94,20 @@ const STEPS = [
 
 function newChapterId() {
   return `ch_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function newLessonId() {
+  return `les_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function withLessonIds(
+  videos: Omit<PlaylistVideo, "id">[]
+): PlaylistVideo[] {
+  return videos.map((v, i) => ({
+    ...v,
+    id: newLessonId(),
+    position: v.position ?? i,
+  }));
 }
 
 export default function CreateCourseWizardPage() {
@@ -105,21 +122,34 @@ export default function CreateCourseWizardPage() {
     shortDescription: "",
     description: "",
     level: "BEGINNER",
-    isFree: true,
-    price: "0",
+    isFree: false,
+    price: "",
     tags: "",
   });
 
+  const [contentMode, setContentMode] = useState<ContentMode>("choose");
   const [playlistUrl, setPlaylistUrl] = useState("");
+  const [extraVideoUrl, setExtraVideoUrl] = useState("");
+  const [customChapterCount, setCustomChapterCount] = useState(2);
+  const [customLessonCounts, setCustomLessonCounts] = useState<number[]>([3, 3]);
+  const [customTitles, setCustomTitles] = useState<string[]>([
+    "Chapter 1",
+    "Chapter 2",
+  ]);
+  const [customUrls, setCustomUrls] = useState<string[][]>([
+    ["", "", ""],
+    ["", "", ""],
+  ]);
   const [playlistMeta, setPlaylistMeta] = useState<{
     title: string;
     description: string;
     thumbnail: string | null;
   } | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [previewKey, setPreviewKey] = useState<{ chapterId: string; videoId: string } | null>(
-    null
-  );
+  const [previewKey, setPreviewKey] = useState<{
+    chapterId: string;
+    lessonId: string;
+  } | null>(null);
 
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseSlug, setCourseSlug] = useState<string | null>(null);
@@ -132,6 +162,44 @@ export default function CreateCourseWizardPage() {
     emptyAssessment("Final Exam")
   );
 
+  const stepRef = useRef(step);
+  const modeRef = useRef(contentMode);
+  stepRef.current = step;
+  modeRef.current = contentMode;
+
+  /** One undo step for browser/navbar back — wizard steps share one URL. */
+  const pushWizardState = (nextStep: number, nextMode?: ContentMode) => {
+    const mode = nextMode ?? modeRef.current;
+    window.history.pushState(
+      { eduflowWizard: true, step: nextStep, contentMode: mode },
+      ""
+    );
+    setStep(nextStep);
+    if (nextMode !== undefined) setContentMode(nextMode);
+  };
+
+  const wizardBack = () => {
+    window.history.back();
+  };
+
+  useEffect(() => {
+    window.history.replaceState(
+      { eduflowWizard: true, step: 1, contentMode: "choose" },
+      ""
+    );
+    const onPop = (e: PopStateEvent) => {
+      const s = e.state as
+        | { eduflowWizard?: boolean; step?: number; contentMode?: ContentMode }
+        | null;
+      if (s?.eduflowWizard) {
+        setStep(s.step ?? 1);
+        setContentMode(s.contentMode ?? "choose");
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   const flatLessons = useMemo(
     () => chapters.flatMap((ch) => ch.lessons),
     [chapters]
@@ -140,8 +208,31 @@ export default function CreateCourseWizardPage() {
   const previewVideo = useMemo(() => {
     if (!previewKey) return flatLessons[0] || null;
     const ch = chapters.find((c) => c.id === previewKey.chapterId);
-    return ch?.lessons.find((l) => l.videoId === previewKey.videoId) || flatLessons[0] || null;
+    return (
+      ch?.lessons.find((l) => l.id === previewKey.lessonId) ||
+      flatLessons[0] ||
+      null
+    );
   }, [previewKey, chapters, flatLessons]);
+
+  const syncCustomStructure = (chapterCount: number, lessonCounts: number[]) => {
+    const counts = Array.from({ length: chapterCount }, (_, i) =>
+      Math.max(1, lessonCounts[i] ?? 3)
+    );
+    setCustomChapterCount(chapterCount);
+    setCustomLessonCounts(counts);
+    setCustomTitles((prev) =>
+      Array.from(
+        { length: chapterCount },
+        (_, i) => prev[i] || `Chapter ${i + 1}`
+      )
+    );
+    setCustomUrls((prev) =>
+      counts.map((n, i) =>
+        Array.from({ length: n }, (_, j) => prev[i]?.[j] || "")
+      )
+    );
+  };
 
   const totalDuration = useMemo(
     () => flatLessons.reduce((sum, v) => sum + (v.durationMinutes || 0), 0),
@@ -174,7 +265,7 @@ export default function CreateCourseWizardPage() {
         description: form.description.trim(),
         level: form.level,
         isFree: form.isFree,
-        price: form.isFree ? 0 : form.price,
+        price: form.isFree ? 0 : Number(form.price) || 0,
         tags: form.tags.trim() || undefined,
         status: "DRAFT",
         currency: "ETB",
@@ -198,7 +289,7 @@ export default function CreateCourseWizardPage() {
     setBusy(true);
     try {
       await ensureDraftCourse();
-      setStep(2);
+      pushWizardState(2, "choose");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save course");
     } finally {
@@ -222,14 +313,15 @@ export default function CreateCourseWizardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
 
-      const videos = (data.videos || []) as PlaylistVideo[];
+      const videos = withLessonIds(
+        (data.videos || []) as Omit<PlaylistVideo, "id">[]
+      );
       setPlaylistMeta({
         title: data.title,
         description: data.description,
         thumbnail: data.thumbnail,
       });
 
-      // Start with one chapter — instructor can split/group as needed
       const initial: Chapter[] = [
         {
           id: newChapterId(),
@@ -239,7 +331,7 @@ export default function CreateCourseWizardPage() {
       ];
       setChapters(initial);
       if (videos[0]) {
-        setPreviewKey({ chapterId: initial[0].id, videoId: videos[0].videoId });
+        setPreviewKey({ chapterId: initial[0].id, lessonId: videos[0].id });
       }
 
       setForm((prev) => ({
@@ -255,13 +347,124 @@ export default function CreateCourseWizardPage() {
             : data.description || prev.description || data.title,
       }));
 
-      toast("success", `Imported ${videos.length} videos — organize into chapters`);
-      setStep(3);
+      toast(
+        "success",
+        `Imported ${videos.length} videos — add more below or continue`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not import playlist");
     } finally {
       setBusy(false);
     }
+  };
+
+  const addExtraVideo = async () => {
+    setError(null);
+    if (!extraVideoUrl.trim()) {
+      setError("Paste a YouTube video URL to add.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/youtube/video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: extraVideoUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not add video");
+      const video = withLessonIds([
+        data.video as Omit<PlaylistVideo, "id">,
+      ])[0];
+
+      setChapters((prev) => {
+        if (prev.length === 0) {
+          const chId = newChapterId();
+          setPreviewKey({ chapterId: chId, lessonId: video.id });
+          return [{ id: chId, title: "Chapter 1", lessons: [video] }];
+        }
+        const next = [...prev];
+        const last = next.length - 1;
+        next[last] = {
+          ...next[last],
+          lessons: [...next[last].lessons, video],
+        };
+        return next;
+      });
+      setExtraVideoUrl("");
+      toast("success", "Video added");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add video");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importCustomStructure = async () => {
+    setError(null);
+    const urlsFlat = customUrls.flatMap((row, ci) =>
+      row.map((url, li) => ({ url: url.trim(), ci, li }))
+    );
+    const missing = urlsFlat.find((u) => !u.url);
+    if (missing) {
+      setError(
+        `Fill every lesson URL (Chapter ${missing.ci + 1}, lesson ${missing.li + 1}).`
+      );
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/youtube/video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls: urlsFlat.map((u) => u.url) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Import failed");
+
+      const videos = withLessonIds(
+        (data.videos || []) as Omit<PlaylistVideo, "id">[]
+      );
+      let cursor = 0;
+      const built: Chapter[] = customLessonCounts.map((count, ci) => {
+        const slice = videos.slice(cursor, cursor + count);
+        cursor += count;
+        return {
+          id: newChapterId(),
+          title: customTitles[ci]?.trim() || `Chapter ${ci + 1}`,
+          lessons: slice,
+        };
+      });
+
+      setChapters(built);
+      setPlaylistMeta((prev) => ({
+        title: prev?.title || form.title,
+        description: prev?.description || form.description,
+        thumbnail: built[0]?.lessons[0]?.thumbnail || prev?.thumbnail || null,
+      }));
+      if (built[0]?.lessons[0]) {
+        setPreviewKey({
+          chapterId: built[0].id,
+          lessonId: built[0].lessons[0].id,
+        });
+      }
+      toast("success", `Loaded ${videos.length} videos`);
+      pushWizardState(3);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import videos");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const goVideosNext = () => {
+    setError(null);
+    if (flatLessons.length === 0) {
+      setError("Add at least one video before continuing.");
+      return;
+    }
+    pushWizardState(3);
   };
 
   const renameChapter = (chapterId: string, title: string) => {
@@ -271,10 +474,12 @@ export default function CreateCourseWizardPage() {
   };
 
   const addEmptyChapter = () => {
+    const id = newChapterId();
     setChapters((prev) => [
       ...prev,
-      { id: newChapterId(), title: `Chapter ${prev.length + 1}`, lessons: [] },
+      { id, title: `Chapter ${prev.length + 1}`, lessons: [] },
     ]);
+    return id;
   };
 
   const removeChapter = (chapterId: string) => {
@@ -319,73 +524,42 @@ export default function CreateCourseWizardPage() {
     });
   };
 
-  const removeLesson = (chapterId: string, videoId: string) => {
+  const removeLesson = (chapterId: string, lessonId: string) => {
     setChapters((prev) =>
-      prev
-        .map((ch) =>
-          ch.id === chapterId
-            ? { ...ch, lessons: ch.lessons.filter((l) => l.videoId !== videoId) }
-            : ch
-        )
-        .filter((ch) => ch.lessons.length > 0 || prev.length === 1)
+      prev.map((ch) =>
+        ch.id === chapterId
+          ? { ...ch, lessons: ch.lessons.filter((l) => l.id !== lessonId) }
+          : ch
+      )
     );
   };
 
-  const moveLesson = (
-    chapterId: string,
-    lessonIndex: number,
-    direction: "up" | "down"
+  const reorderLesson = (
+    fromChapterId: string,
+    lessonId: string,
+    toChapterId: string,
+    toIndex: number
   ) => {
     setChapters((prev) => {
-      const ci = prev.findIndex((c) => c.id === chapterId);
-      if (ci < 0) return prev;
-      const ch = prev[ci];
-      const nextIdx = direction === "up" ? lessonIndex - 1 : lessonIndex + 1;
-
-      // Move within same chapter
-      if (nextIdx >= 0 && nextIdx < ch.lessons.length) {
-        const lessons = [...ch.lessons];
-        const [item] = lessons.splice(lessonIndex, 1);
-        lessons.splice(nextIdx, 0, item);
-        const next = [...prev];
-        next[ci] = { ...ch, lessons };
-        return next;
-      }
-
-      // Move to previous chapter (end)
-      if (direction === "up" && ci > 0) {
-        const lessons = [...ch.lessons];
-        const [item] = lessons.splice(lessonIndex, 1);
-        const next = [...prev];
-        next[ci] = { ...ch, lessons };
-        next[ci - 1] = {
-          ...next[ci - 1],
-          lessons: [...next[ci - 1].lessons, item],
-        };
-        // Drop empty chapter
-        return next.filter((c) => c.lessons.length > 0);
-      }
-
-      // Move to next chapter (start)
-      if (direction === "down" && ci < prev.length - 1) {
-        const lessons = [...ch.lessons];
-        const [item] = lessons.splice(lessonIndex, 1);
-        const next = [...prev];
-        next[ci] = { ...ch, lessons };
-        next[ci + 1] = {
-          ...next[ci + 1],
-          lessons: [item, ...next[ci + 1].lessons],
-        };
-        return next.filter((c) => c.lessons.length > 0);
-      }
-
-      return prev;
+      const next = prev.map((ch) => ({ ...ch, lessons: [...ch.lessons] }));
+      const fromCi = next.findIndex((c) => c.id === fromChapterId);
+      const toCi = next.findIndex((c) => c.id === toChapterId);
+      if (fromCi < 0 || toCi < 0) return prev;
+      const fromLessons = next[fromCi].lessons;
+      const li = fromLessons.findIndex((l) => l.id === lessonId);
+      if (li < 0) return prev;
+      const [item] = fromLessons.splice(li, 1);
+      let insertAt = toIndex;
+      if (fromCi === toCi && li < toIndex) insertAt = toIndex - 1;
+      insertAt = Math.max(0, Math.min(insertAt, next[toCi].lessons.length));
+      next[toCi].lessons.splice(insertAt, 0, item);
+      return next;
     });
   };
 
   const moveLessonToChapter = (
     fromChapterId: string,
-    videoId: string,
+    lessonId: string,
     toChapterId: string
   ) => {
     if (fromChapterId === toChapterId) return;
@@ -393,18 +567,16 @@ export default function CreateCourseWizardPage() {
       let moving: PlaylistVideo | null = null;
       const stripped = prev.map((ch) => {
         if (ch.id !== fromChapterId) return ch;
-        const lesson = ch.lessons.find((l) => l.videoId === videoId);
+        const lesson = ch.lessons.find((l) => l.id === lessonId);
         if (lesson) moving = lesson;
-        return { ...ch, lessons: ch.lessons.filter((l) => l.videoId !== videoId) };
+        return { ...ch, lessons: ch.lessons.filter((l) => l.id !== lessonId) };
       });
       if (!moving) return prev;
-      return stripped
-        .map((ch) =>
-          ch.id === toChapterId
-            ? { ...ch, lessons: [...ch.lessons, moving!] }
-            : ch
-        )
-        .filter((ch) => ch.lessons.length > 0);
+      return stripped.map((ch) =>
+        ch.id === toChapterId
+          ? { ...ch, lessons: [...ch.lessons, moving!] }
+          : ch
+      );
     });
   };
 
@@ -427,7 +599,7 @@ export default function CreateCourseWizardPage() {
       });
       return next;
     });
-    setStep(4);
+    pushWizardState(4);
   };
 
   const updateChapterAssessment = (
@@ -495,7 +667,7 @@ export default function CreateCourseWizardPage() {
           description: form.description.trim(),
           level: form.level,
           isFree: form.isFree,
-          price: form.isFree ? 0 : form.price,
+          price: form.isFree ? 0 : Number(form.price) || 0,
           tags: form.tags.trim() || undefined,
           thumbnail: playlistMeta?.thumbnail || first?.thumbnail,
           previewVideo: first?.url,
@@ -589,15 +761,13 @@ export default function CreateCourseWizardPage() {
 
       setCourseSlug(pubData.slug || courseSlug);
       toast("success", "Course published! Students can find it now.");
-      setStep(5);
+      pushWizardState(5);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Publish failed");
     } finally {
       setBusy(false);
     }
   };
-
-  let lessonCounter = 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -612,7 +782,8 @@ export default function CreateCourseWizardPage() {
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Create Course</h1>
         <p className="text-text-secondary mt-1">
-          Build a course from a YouTube playlist, group lessons into chapters, and publish.
+          Build a course from a playlist, individual videos, or both — then
+          organize chapters and publish.
         </p>
       </div>
 
@@ -705,10 +876,20 @@ export default function CreateCourseWizardPage() {
               <Input
                 label="Price (ETB)"
                 name="price"
-                type="number"
-                min="0"
+                type="text"
+                inputMode="decimal"
+                placeholder="e.g. 499"
                 value={form.price}
-                onChange={handleChange}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d.]/g, "");
+                  setForm((prev) => ({ ...prev, price: raw }));
+                }}
+                onFocus={(e) => {
+                  if (form.price === "0") {
+                    setForm((prev) => ({ ...prev, price: "" }));
+                    e.target.value = "";
+                  }
+                }}
               />
             )}
             <div className="flex justify-end pt-2">
@@ -724,36 +905,256 @@ export default function CreateCourseWizardPage() {
       {step === 2 && (
         <Card>
           <CardContent className="space-y-5 pt-6">
-            <div className="rounded-xl border border-brand/20 bg-brand/5 p-4 flex gap-3">
-              <Video className="h-6 w-6 text-brand shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-text-primary">
-                  Paste a public YouTube playlist URL
-                </p>
-                <p className="text-xs text-text-secondary mt-1">
-                  Use the <strong className="text-text-primary">playlist</strong> link
-                  (must contain <code className="text-brand">list=PL...</code>), not a single video.
-                  Open the playlist on YouTube → copy the address bar URL.
-                </p>
-              </div>
-            </div>
-            <Input
-              label="YouTube playlist URL"
-              name="playlistUrl"
-              placeholder="https://www.youtube.com/playlist?list=..."
-              value={playlistUrl}
-              onChange={(e) => setPlaylistUrl(e.target.value)}
-            />
-            <div className="flex justify-between gap-3 pt-2">
-              <Button variant="ghost" onClick={() => setStep(1)} disabled={busy}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back
-              </Button>
-              <Button onClick={importPlaylist} isLoading={busy}>
-                <Link2 className="h-4 w-4 mr-2" />
-                Import videos
-              </Button>
-            </div>
+            {contentMode === "choose" && (
+              <>
+                <div>
+                  <h2 className="text-lg font-semibold text-text-primary">
+                    How do you want to add videos?
+                  </h2>
+                  <p className="text-sm text-text-secondary mt-1">
+                    Import a playlist, or build chapters yourself with individual
+                    video links. You can mix both later.
+                  </p>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => pushWizardState(2, "playlist")}
+                    className="text-left rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 hover:border-brand/40 hover:bg-brand/5 transition-all"
+                  >
+                    <Layers className="h-6 w-6 text-brand mb-3" />
+                    <p className="font-semibold text-text-primary">
+                      YouTube playlist
+                    </p>
+                    <p className="text-xs text-text-secondary mt-1.5">
+                      Import a public playlist, then optionally add individual
+                      videos on top.
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => pushWizardState(2, "customize")}
+                    className="text-left rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 hover:border-brand/40 hover:bg-brand/5 transition-all"
+                  >
+                    <ListTree className="h-6 w-6 text-brand mb-3" />
+                    <p className="font-semibold text-text-primary">
+                      Customize myself
+                    </p>
+                    <p className="text-xs text-text-secondary mt-1.5">
+                      Set chapters and lesson counts, then paste a normal video
+                      URL for each lesson.
+                    </p>
+                  </button>
+                </div>
+                <div className="flex justify-start pt-2">
+                  <Button variant="ghost" onClick={wizardBack} disabled={busy}>
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {contentMode === "playlist" && (
+              <>
+                <div className="rounded-xl border border-brand/20 bg-brand/5 p-4 flex gap-3">
+                  <Video className="h-6 w-6 text-brand shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">
+                      Import a public YouTube playlist
+                    </p>
+                    <p className="text-xs text-text-secondary mt-1">
+                      Use a playlist URL with{" "}
+                      <code className="text-brand">list=PL...</code>. After
+                      import you can add individual videos too.
+                    </p>
+                  </div>
+                </div>
+                <Input
+                  label="YouTube playlist URL"
+                  name="playlistUrl"
+                  placeholder="https://www.youtube.com/playlist?list=..."
+                  value={playlistUrl}
+                  onChange={(e) => setPlaylistUrl(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={importPlaylist} isLoading={busy}>
+                    <Link2 className="h-4 w-4 mr-2" />
+                    {flatLessons.length > 0 ? "Re-import playlist" : "Import playlist"}
+                  </Button>
+                </div>
+
+                {flatLessons.length > 0 && (
+                  <div className="rounded-xl border border-white/[0.08] p-4 space-y-3">
+                    <p className="text-sm text-text-primary">
+                      {flatLessons.length} video
+                      {flatLessons.length !== 1 ? "s" : ""} ready
+                      {playlistMeta?.title ? (
+                        <span className="text-text-secondary">
+                          {" "}
+                          · {playlistMeta.title}
+                        </span>
+                      ) : null}
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Input
+                        label="Add an individual video (optional)"
+                        name="extraVideoUrl"
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        value={extraVideoUrl}
+                        onChange={(e) => setExtraVideoUrl(e.target.value)}
+                      />
+                      <div className="flex items-end">
+                        <Button
+                          variant="outline"
+                          onClick={addExtraVideo}
+                          isLoading={busy}
+                          className="w-full sm:w-auto"
+                        >
+                          Add video
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between gap-3 pt-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setError(null);
+                      wizardBack();
+                    }}
+                    disabled={busy}
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={goVideosNext}
+                    disabled={flatLessons.length === 0 || busy}
+                  >
+                    Continue to organize
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {contentMode === "customize" && (
+              <>
+                <div className="rounded-xl border border-brand/20 bg-brand/5 p-4 flex gap-3">
+                  <ListTree className="h-6 w-6 text-brand shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">
+                      Build your own chapter structure
+                    </p>
+                    <p className="text-xs text-text-secondary mt-1">
+                      Choose how many chapters and lessons, then paste a normal
+                      YouTube video URL for each lesson (not a playlist).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="max-w-xs">
+                  <Input
+                    label="Number of chapters"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={String(customChapterCount)}
+                    onChange={(e) => {
+                      const n = Math.max(
+                        1,
+                        Math.min(20, parseInt(e.target.value || "1", 10) || 1)
+                      );
+                      syncCustomStructure(n, customLessonCounts);
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-5 max-h-[420px] overflow-y-auto pr-1">
+                  {Array.from({ length: customChapterCount }, (_, ci) => (
+                    <div
+                      key={ci}
+                      className="rounded-xl border border-white/[0.08] p-4 space-y-3"
+                    >
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <Input
+                          label={`Chapter ${ci + 1} title`}
+                          value={customTitles[ci] || ""}
+                          onChange={(e) =>
+                            setCustomTitles((prev) => {
+                              const next = [...prev];
+                              next[ci] = e.target.value;
+                              return next;
+                            })
+                          }
+                        />
+                        <Input
+                          label="Lessons in this chapter"
+                          type="number"
+                          min={1}
+                          max={40}
+                          value={String(customLessonCounts[ci] ?? 1)}
+                          onChange={(e) => {
+                            const n = Math.max(
+                              1,
+                              Math.min(
+                                40,
+                                parseInt(e.target.value || "1", 10) || 1
+                              )
+                            );
+                            const counts = [...customLessonCounts];
+                            counts[ci] = n;
+                            syncCustomStructure(customChapterCount, counts);
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        {Array.from(
+                          { length: customLessonCounts[ci] ?? 1 },
+                          (_, li) => (
+                            <Input
+                              key={li}
+                              label={`Lesson ${li + 1} video URL`}
+                              placeholder="https://www.youtube.com/watch?v=..."
+                              value={customUrls[ci]?.[li] || ""}
+                              onChange={(e) =>
+                                setCustomUrls((prev) => {
+                                  const next = prev.map((row) => [...row]);
+                                  if (!next[ci]) next[ci] = [];
+                                  next[ci][li] = e.target.value;
+                                  return next;
+                                })
+                              }
+                            />
+                          )
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-between gap-3 pt-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setError(null);
+                      wizardBack();
+                    }}
+                    disabled={busy}
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back
+                  </Button>
+                  <Button onClick={importCustomStructure} isLoading={busy}>
+                    <Link2 className="h-4 w-4 mr-2" />
+                    Import & continue
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       )}
@@ -795,176 +1196,23 @@ export default function CreateCourseWizardPage() {
 
           <Card>
             <CardContent className="pt-6 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-medium text-brand">Chapters</h3>
-                  <p className="text-xs text-text-muted mt-0.5">
-                    Rename chapters, split lessons into new chapters, or move lessons up/down.
-                  </p>
-                </div>
-                <Button type="button" variant="outline" size="sm" onClick={addEmptyChapter}>
-                  <FolderPlus className="h-4 w-4 mr-1.5" />
-                  Add chapter
-                </Button>
-              </div>
-
-              <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1">
-                {chapters.map((chapter, ci) => (
-                  <div
-                    key={chapter.id}
-                    className="rounded-xl border border-white/[0.08] bg-surface-1/50 overflow-hidden"
-                  >
-                    <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06] bg-white/[0.02]">
-                      <input
-                        value={chapter.title}
-                        onChange={(e) => renameChapter(chapter.id, e.target.value)}
-                        className="flex-1 bg-transparent text-sm font-semibold text-text-primary focus:outline-none focus:ring-0"
-                        aria-label="Chapter title"
-                      />
-                      <span className="text-xs text-text-muted shrink-0">
-                        {chapter.lessons.length} lesson
-                        {chapter.lessons.length !== 1 ? "s" : ""}
-                      </span>
-                      {chapters.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeChapter(chapter.id)}
-                          className="p-1.5 text-text-muted hover:text-red-400"
-                          title="Remove chapter (lessons move to previous)"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="p-2 space-y-1">
-                      {chapter.lessons.length === 0 ? (
-                        <p className="text-xs text-text-muted px-2 py-3">
-                          Empty — move lessons here with ↑↓ or the chapter dropdown.
-                        </p>
-                      ) : (
-                        chapter.lessons.map((v, li) => {
-                          lessonCounter += 1;
-                          const n = lessonCounter;
-                          return (
-                            <div
-                              key={v.videoId}
-                              className={cn(
-                                "flex items-center gap-2 p-2 rounded-lg border border-transparent hover:border-white/[0.06] hover:bg-white/[0.03]",
-                                previewKey?.videoId === v.videoId &&
-                                  "border-brand/40 bg-brand/5"
-                              )}
-                            >
-                              <button
-                                type="button"
-                                className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                                onClick={() =>
-                                  setPreviewKey({
-                                    chapterId: chapter.id,
-                                    videoId: v.videoId,
-                                  })
-                                }
-                              >
-                                <span className="text-xs text-text-muted w-5 shrink-0">
-                                  {n}
-                                </span>
-                                {v.thumbnail ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={v.thumbnail}
-                                    alt=""
-                                    className="h-10 w-16 object-cover rounded shrink-0"
-                                  />
-                                ) : (
-                                  <div className="h-10 w-16 rounded bg-surface-3 flex items-center justify-center shrink-0">
-                                    <PlayCircle className="h-4 w-4 text-text-muted" />
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <p className="text-sm text-text-primary truncate">
-                                    {v.title}
-                                  </p>
-                                  <p className="text-xs text-text-muted">
-                                    {v.durationMinutes
-                                      ? `${v.durationMinutes} min`
-                                      : "Video"}
-                                  </p>
-                                </div>
-                              </button>
-
-                              <div className="flex items-center gap-0.5 shrink-0">
-                                {li > 0 && (
-                                  <button
-                                    type="button"
-                                    title="Start new chapter from here"
-                                    onClick={() => splitChapterAt(chapter.id, li)}
-                                    className="p-1.5 text-text-muted hover:text-brand"
-                                  >
-                                    <Scissors className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  title="Move up"
-                                  onClick={() => moveLesson(chapter.id, li, "up")}
-                                  className="p-1.5 text-text-muted hover:text-text-primary"
-                                >
-                                  <ChevronUp className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Move down"
-                                  onClick={() => moveLesson(chapter.id, li, "down")}
-                                  className="p-1.5 text-text-muted hover:text-text-primary"
-                                >
-                                  <ChevronDown className="h-3.5 w-3.5" />
-                                </button>
-                                {chapters.length > 1 && (
-                                  <select
-                                    className="max-w-[110px] text-[10px] bg-surface-2 border border-white/[0.08] rounded px-1 py-1 text-text-secondary"
-                                    value={chapter.id}
-                                    onChange={(e) =>
-                                      moveLessonToChapter(
-                                        chapter.id,
-                                        v.videoId,
-                                        e.target.value
-                                      )
-                                    }
-                                    title="Move to chapter"
-                                  >
-                                    {chapters.map((c, i) => (
-                                      <option key={c.id} value={c.id}>
-                                        Ch {i + 1}
-                                      </option>
-                                    ))}
-                                  </select>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => removeLesson(chapter.id, v.videoId)}
-                                  className="p-1.5 text-text-muted hover:text-red-400"
-                                  aria-label="Remove lesson"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-xs text-text-muted flex items-center gap-1.5">
-                <Scissors className="h-3 w-3" />
-                Click scissors on a lesson to start a new chapter from that video downward.
-              </p>
+              <CourseChapterOrganizer
+                chapters={chapters as OrganizerChapter[]}
+                previewKey={previewKey}
+                onPreview={(chapterId, lessonId) =>
+                  setPreviewKey({ chapterId, lessonId })
+                }
+                onRenameChapter={renameChapter}
+                onAddChapter={addEmptyChapter}
+                onRemoveChapter={removeChapter}
+                onRemoveLesson={removeLesson}
+                onSplitAt={splitChapterAt}
+                onReorderLesson={reorderLesson}
+                onMoveLessonToChapter={moveLessonToChapter}
+              />
 
               <div className="flex justify-between gap-3 pt-2">
-                <Button variant="ghost" onClick={() => setStep(2)} disabled={busy}>
+                <Button variant="ghost" onClick={wizardBack} disabled={busy}>
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Back
                 </Button>
@@ -1211,7 +1459,7 @@ export default function CreateCourseWizardPage() {
             </div>
 
             <div className="flex justify-between gap-3 pt-2">
-              <Button variant="ghost" onClick={() => setStep(3)} disabled={busy}>
+              <Button variant="ghost" onClick={wizardBack} disabled={busy}>
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>

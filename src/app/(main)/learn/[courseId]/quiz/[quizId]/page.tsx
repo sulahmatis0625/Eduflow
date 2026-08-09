@@ -125,10 +125,6 @@ export default function CourseQuizPage({
   const maxQuizOrder = quizzes.reduce((m, q) => Math.max(m, q.order), 0);
   const isFinalExam = Boolean(quiz && maxQuizOrder > 0 && quiz.order === maxQuizOrder);
 
-  const nextQuiz = course?.quizzes
-    ?.filter((q) => quiz && q.order > quiz.order)
-    .sort((a, b) => a.order - b.order)[0];
-
   const nextSection = course?.sections?.find(
     (s) => quiz && s.order === quiz.order + 1
   );
@@ -167,11 +163,6 @@ export default function CourseQuizPage({
             lockReason={
               lockReason ||
               "Complete all videos in this chapter before taking the quiz."
-            }
-            nextQuizHref={
-              nextQuiz
-                ? `/learn/${resolved?.courseId}/quiz/${nextQuiz.id}`
-                : null
             }
             nextLessonHref={
               nextLessonId

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
-const VALID_LESSON_TYPES = ["VIDEO", "TEXT", "QUIZ", "ASSIGNMENT", "LIVE"];
+const VALID_LESSON_TYPES = ["VIDEO", "TEXT", "FILE", "QUIZ", "ASSIGNMENT", "LIVE"];
 
 export async function POST(
   req: NextRequest,

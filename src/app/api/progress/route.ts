@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { issueCertificateIfEligible } from "@/lib/certificates";
 import { courseRequiresFinalQuiz } from "@/lib/course-completion";
+import { courseSkipsWatchGate } from "@/lib/demo-courses";
+
+const WATCH_COMPLETE_RATIO = 0.9;
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,7 +14,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { lessonId, completed, watchTime } = await req.json();
+    const body = await req.json();
+    const lessonId = body.lessonId as string;
+    const wantComplete = Boolean(body.completed);
+    const incomingWatch =
+      body.watchTime != null ? Math.max(0, Math.floor(Number(body.watchTime))) : null;
+    const videoDuration =
+      body.videoDuration != null
+        ? Math.max(0, Math.floor(Number(body.videoDuration)))
+        : null;
+
+    if (!lessonId) {
+      return NextResponse.json({ error: "lessonId is required" }, { status: 400 });
+    }
 
     const lesson = await db.lesson.findUnique({
       where: { id: lessonId },
@@ -36,21 +51,71 @@ export async function POST(req: NextRequest) {
 
     const courseId = lesson.section.courseId;
 
+    const existing = await db.lessonProgress.findUnique({
+      where: {
+        userId_lessonId: { userId: session.user.id, lessonId },
+      },
+    });
+
+    const nextWatchTime = Math.max(
+      existing?.watchTime ?? 0,
+      incomingWatch ?? 0
+    );
+
+    // VIDEO lessons require ~90% watch before Mark Complete (except demo playlist courses)
+    const isVideo = lesson.type === "VIDEO" && Boolean(lesson.videoUrl);
+    const skipWatchGate = courseSkipsWatchGate(
+      lesson.section.course.slug,
+      lesson.section.course.title
+    );
+    if (wantComplete && isVideo && !existing?.completed && !skipWatchGate) {
+      const durationSeconds =
+        videoDuration && videoDuration > 0
+          ? videoDuration
+          : lesson.duration > 0
+            ? lesson.duration * 60
+            : 0;
+
+      const required =
+        durationSeconds > 0
+          ? Math.floor(durationSeconds * WATCH_COMPLETE_RATIO)
+          : 0;
+
+      if (required > 0 && nextWatchTime < required) {
+        const watchedPct =
+          durationSeconds > 0
+            ? Math.round((nextWatchTime / durationSeconds) * 100)
+            : 0;
+        return NextResponse.json(
+          {
+            error: `Not completed yet — watch at least 90% of the video first (you've watched about ${watchedPct}%).`,
+            watchTime: nextWatchTime,
+            requiredWatchTime: required,
+            watchedPercent: watchedPct,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    const becomingComplete = wantComplete && !existing?.completed;
+
     const progress = await db.lessonProgress.upsert({
       where: {
         userId_lessonId: { userId: session.user.id, lessonId },
       },
       update: {
-        completed: completed ?? undefined,
-        watchTime: watchTime ?? undefined,
-        completedAt: completed ? new Date() : undefined,
+        watchTime: nextWatchTime,
+        ...(wantComplete
+          ? { completed: true, completedAt: existing?.completedAt ?? new Date() }
+          : {}),
       },
       create: {
         userId: session.user.id,
         lessonId,
-        completed: completed ?? false,
-        watchTime: watchTime ?? 0,
-        completedAt: completed ? new Date() : undefined,
+        completed: wantComplete,
+        watchTime: nextWatchTime,
+        completedAt: wantComplete ? new Date() : undefined,
       },
     });
 
@@ -77,14 +142,13 @@ export async function POST(req: NextRequest) {
       where: { userId: session.user.id, courseId },
       data: {
         progress: courseProgress,
-        // Complete + certify from lessons only when the course has no quizzes
         ...(courseProgress === 100 && !needsFinal
           ? { status: "COMPLETED", completedAt: new Date(), grade: 100 }
           : {}),
       },
     });
 
-    if (completed) {
+    if (becomingComplete) {
       await db.user.update({
         where: { id: session.user.id },
         data: { xp: { increment: 5 } },
@@ -93,7 +157,7 @@ export async function POST(req: NextRequest) {
 
     let certificateId: string | null = null;
 
-    if (courseProgress === 100) {
+    if (courseProgress === 100 && becomingComplete) {
       await db.user.update({
         where: { id: session.user.id },
         data: { xp: { increment: 50 } },

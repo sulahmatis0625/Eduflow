@@ -90,8 +90,9 @@ export default async function DashboardPage() {
   const totalCertificates = certificates.length;
   const userXp = user.xp ?? 0;
   const userLevel = getLevelFromXp(userXp);
-  const xpForNext = getXpForNextLevel(userXp);
-  const xpProgress = getXpProgress(userXp);
+  const xpIntoLevel = getXpProgress(userXp);
+  const xpNeededForNext = 100;
+  const xpToNextLevel = getXpForNextLevel(userXp);
 
   const stats = [
     {
@@ -113,8 +114,8 @@ export default async function DashboardPage() {
       color: "bg-purple-500/10 text-purple-400",
     },
     {
-      label: `Level ${userLevel}`,
-      value: `${userXp} XP`,
+      label: "Total XP",
+      value: userXp,
       icon: Zap,
       color: "bg-gold/10 text-gold",
     },
@@ -174,21 +175,28 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* XP Progress Bar */}
+      {/* Single level progress — 100 XP per level */}
       <Card>
         <CardContent>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">
               <Zap className="h-5 w-5 text-gold" />
               <span className="font-semibold text-text-primary">
-                Level {userLevel} Progress
+                Level {userLevel}
+              </span>
+              <span className="text-xs text-text-muted">
+                · {userXp} XP total · next level at {xpToNextLevel} XP
               </span>
             </div>
             <span className="text-sm text-text-secondary">
-              {xpProgress} / {100} XP to Level {userLevel + 1}
+              {xpIntoLevel} / {xpNeededForNext} XP to Level {userLevel + 1}
             </span>
           </div>
-          <Progress value={xpProgress} max={100} color="gold" size="md" />
+          <Progress value={xpIntoLevel} max={xpNeededForNext} color="gold" size="md" />
+          <p className="text-xs text-text-muted mt-2">
+            Earn XP by completing lessons and quizzes. Every 100 XP raises your
+            level by 1.
+          </p>
         </CardContent>
       </Card>
 
@@ -282,54 +290,6 @@ export default async function DashboardPage() {
         {/* Notifications Panel */}
         <div className="flex flex-col gap-4">
           <DashboardNotifications initial={notifications} />
-
-          {/* Quick Actions */}
-          <div className="shrink-0">
-            <h2 className="text-sm font-medium text-brand mb-3">
-              Quick Actions
-            </h2>
-            <div className="space-y-2">
-              <Link href="/courses" className="block">
-                <Card hover>
-                  <CardContent className="flex items-center gap-3 py-3">
-                    <div className="p-2 rounded-lg bg-brand/10">
-                      <Search className="h-4 w-4 text-brand" />
-                    </div>
-                    <span className="text-sm font-medium text-text-primary">
-                      Browse Courses
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-text-tertiary ml-auto" />
-                  </CardContent>
-                </Card>
-              </Link>
-              <Link href="/dashboard/achievements" className="block">
-                <Card hover>
-                  <CardContent className="flex items-center gap-3 py-3">
-                    <div className="p-2 rounded-lg bg-gold/10">
-                      <Award className="h-4 w-4 text-gold" />
-                    </div>
-                    <span className="text-sm font-medium text-text-primary">
-                      View Achievements
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-text-tertiary ml-auto" />
-                  </CardContent>
-                </Card>
-              </Link>
-              <Link href="/dashboard/certificates" className="block">
-                <Card hover>
-                  <CardContent className="flex items-center gap-3 py-3">
-                    <div className="p-2 rounded-lg bg-purple-500/10">
-                      <Award className="h-4 w-4 text-purple-400" />
-                    </div>
-                    <span className="text-sm font-medium text-text-primary">
-                      My Certificates
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-text-tertiary ml-auto" />
-                  </CardContent>
-                </Card>
-              </Link>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -85,6 +85,55 @@ export async function PATCH(
   }
 }
 
+/** Instructors may delete draft/pending courses only — never published. */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ courseId: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user || !["ADMIN", "INSTRUCTOR"].includes(session.user.role)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { courseId } = await params;
+    const course = await db.course.findUnique({
+      where: { id: courseId },
+      select: { id: true, instructorId: true, status: true, title: true },
+    });
+
+    if (!course) {
+      return NextResponse.json({ error: "Course not found" }, { status: 404 });
+    }
+
+    if (
+      session.user.role !== "ADMIN" &&
+      course.instructorId !== session.user.id
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (course.status === "PUBLISHED") {
+      return NextResponse.json(
+        {
+          error:
+            "Published courses cannot be deleted. You can add new courses instead.",
+        },
+        { status: 403 }
+      );
+    }
+
+    await db.course.delete({ where: { id: courseId } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Course delete error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete course" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ courseId: string }> }

@@ -4,11 +4,11 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { cn } from "@/lib/utils";
+import { cn, getLevelFromXp, getXpProgress } from "@/lib/utils";
 import {
   LayoutDashboard, BookOpen, Trophy, Award, Settings,
   GraduationCap, Bell, BarChart3,
-  Users, Plus, UserPlus,
+  Plus, UserPlus,
   X, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 
@@ -23,9 +23,12 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
   const pathname = usePathname();
   const { data: session } = useSession();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [xp, setXp] = useState(0);
 
   const role = session?.user?.role;
   const isTeacher = role === "INSTRUCTOR" || role === "ADMIN";
+  const userLevel = getLevelFromXp(xp);
+  const xpIntoLevel = getXpProgress(xp);
 
   useEffect(() => {
     if (!session?.user) return;
@@ -39,11 +42,22 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
       .catch(() => {});
   }, [session?.user, pathname]);
 
+  useEffect(() => {
+    if (!session?.user || isTeacher) return;
+    fetch("/api/user/profile")
+      .then((res) => res.json())
+      .then((data) => {
+        if (typeof data?.xp === "number") setXp(data.xp);
+      })
+      .catch(() => {});
+  }, [session?.user, isTeacher, pathname]);
+
   const links: { href: string; icon: typeof LayoutDashboard; label: string; badge?: number }[] = isTeacher
     ? [
         { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
-        { href: "/dashboard/classrooms/new", icon: Plus, label: "Create Course" },
+        { href: "/dashboard/classrooms/new", icon: Plus, label: "Create Classroom" },
         { href: "/dashboard/courses", icon: GraduationCap, label: "My Courses" },
+        { href: "/dashboard/achievements", icon: Trophy, label: "Achievements" },
         { href: "/dashboard/notifications", icon: Bell, label: "Notifications", badge: unreadCount },
         { href: "/dashboard/settings", icon: Settings, label: "Settings" },
       ]
@@ -142,13 +156,20 @@ export function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }: Sideba
                 </div>
                 <div>
                   <p className="text-xs text-text-muted">Your Level</p>
-                  <p className="text-sm font-bold text-text-primary">Level 1</p>
+                  <p className="text-sm font-bold text-text-primary">
+                    Level {userLevel}
+                  </p>
                 </div>
               </div>
               <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-gold to-amber-400 rounded-full shadow-[0_0_8px_rgba(255,184,0,0.4)]" style={{ width: "0%" }} />
+                <div
+                  className="h-full bg-gradient-to-r from-gold to-amber-400 rounded-full shadow-[0_0_8px_rgba(255,184,0,0.4)] transition-all duration-500"
+                  style={{ width: `${Math.min(100, xpIntoLevel)}%` }}
+                />
               </div>
-              <p className="text-xs text-text-muted mt-2">0 / 100 XP</p>
+              <p className="text-xs text-text-muted mt-2">
+                {xpIntoLevel} / 100 XP
+              </p>
             </div>
           </div>
         )}

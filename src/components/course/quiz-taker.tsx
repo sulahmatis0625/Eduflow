@@ -53,7 +53,6 @@ interface QuizTakerProps {
   quiz: QuizData;
   courseSlug?: string;
   nextLessonHref?: string | null;
-  nextQuizHref?: string | null;
   locked?: boolean;
   lockReason?: string;
   isFinalExam?: boolean;
@@ -81,21 +80,22 @@ function formatTime(totalSeconds: number) {
 export function QuizTaker({
   quiz,
   nextLessonHref,
-  nextQuizHref,
   locked = false,
   lockReason,
   isFinalExam: isFinalExamProp,
   onSubmitted,
 }: QuizTakerProps) {
+  const questionCount = quiz.questions.length;
+  // 1 minute per question for the whole quiz
+  const quizSeconds = Math.max(60, questionCount * 60);
+
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("taking");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<SubmitResult | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(
-    quiz.timeLimit && quiz.timeLimit > 0 ? quiz.timeLimit * 60 : null
-  );
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(quizSeconds);
   const [timedOut, setTimedOut] = useState(false);
   const submittingRef = useRef(false);
   const answersRef = useRef(answers);
@@ -215,9 +215,7 @@ export function QuizTaker({
     setPhase("taking");
     setError("");
     setTimedOut(false);
-    setSecondsLeft(
-      quiz.timeLimit && quiz.timeLimit > 0 ? quiz.timeLimit * 60 : null
-    );
+    setSecondsLeft(quizSeconds);
   };
 
   if (locked) {
@@ -294,16 +292,9 @@ export function QuizTaker({
                 </Button>
               </Link>
             )}
-            {result.passed && nextQuizHref && !result.courseCompleted && (
-              <Link href={nextQuizHref}>
-                <Button>
-                  Next quiz <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </Link>
-            )}
             {result.passed && nextLessonHref && !result.courseCompleted && (
               <Link href={nextLessonHref}>
-                <Button variant={nextQuizHref ? "outline" : "primary"}>
+                <Button>
                   Continue learning <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
               </Link>
@@ -417,11 +408,10 @@ export function QuizTaker({
             {isFinalExam ? "Final exam" : "Chapter quiz"}
           </Badge>
           {alreadyPassed && <Badge variant="success">Passed</Badge>}
-          {quiz.timeLimit ? (
-            <span className="text-xs text-text-tertiary flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5" /> {quiz.timeLimit} min limit
-            </span>
-          ) : null}
+          <span className="text-xs text-text-tertiary flex items-center gap-1">
+            <Clock className="h-3.5 w-3.5" /> {questionCount} min limit (1 min /
+            question)
+          </span>
           <span className="text-xs text-text-tertiary flex items-center gap-1">
             <Target className="h-3.5 w-3.5" /> Pass {quiz.passingScore}%
           </span>

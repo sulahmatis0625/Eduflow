@@ -210,7 +210,10 @@ export async function POST(
         title: title.trim(),
         description: description?.trim() || null,
         courseId: id,
-        timeLimit: timeLimit ? parseInt(String(timeLimit), 10) : null,
+        // Default: 1 minute per question when instructor leaves time blank
+        timeLimit: timeLimit
+          ? parseInt(String(timeLimit), 10)
+          : questions.length,
         passingScore: passingScore != null ? parseFloat(String(passingScore)) : 50,
         maxAttempts: maxAttempts != null ? parseInt(String(maxAttempts), 10) : 3,
         order: quizOrder,

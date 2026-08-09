@@ -7,6 +7,7 @@ import {
   areQuizLessonsComplete,
   type QuizUnlockContext,
 } from "@/lib/quiz-progress";
+import { courseSkipsWatchGate } from "@/lib/demo-courses";
 
 export async function GET(
   req: NextRequest,
@@ -59,16 +60,20 @@ export async function GET(
     }
 
     const allLessonIds = course.sections.flatMap((s) => s.lessons.map((l) => l.id));
-    const completedProgress = await db.lessonProgress.findMany({
+    const allProgress = await db.lessonProgress.findMany({
       where: {
         userId: session.user.id,
         lessonId: { in: allLessonIds },
-        completed: true,
       },
-      select: { lessonId: true },
+      select: { lessonId: true, completed: true, watchTime: true },
     });
 
-    const completedLessonIds = completedProgress.map((p) => p.lessonId);
+    const completedLessonIds = allProgress
+      .filter((p) => p.completed)
+      .map((p) => p.lessonId);
+    const lessonWatchTimes = Object.fromEntries(
+      allProgress.map((p) => [p.lessonId, p.watchTime])
+    );
     const maxSectionOrder = course.sections.reduce(
       (max, s) => Math.max(max, s.order),
       0
@@ -124,6 +129,8 @@ export async function GET(
       quizzes,
       enrollment: { progress: enrollment.progress, status: enrollment.status },
       completedLessons: completedLessonIds,
+      lessonWatchTimes,
+      skipWatchGate: courseSkipsWatchGate(course.slug, course.title),
     });
   } catch (error) {
     console.error("Learn fetch error:", error);

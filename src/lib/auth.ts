@@ -99,17 +99,58 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.role = (user as { role: string }).role;
         token.id = user.id;
+        // Short URL only — never put base64 photos in the JWT cookie
+        if (typeof user.image === "string" && !user.image.startsWith("data:")) {
+          token.picture = user.image;
+        }
+        if (user.name) token.name = user.name;
       }
+
+      if (trigger === "update" && session) {
+        if (typeof session.name === "string") token.name = session.name;
+        if (
+          typeof session.image === "string" &&
+          !session.image.startsWith("data:")
+        ) {
+          token.picture = session.image;
+        }
+        // Force session rebuild so navbar picks up DB image
+        token.updatedAt = Date.now();
+      }
+
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
+      if (session.user && token.id) {
         session.user.role = token.role as string;
         session.user.id = token.id as string;
+        if (typeof token.name === "string") {
+          session.user.name = token.name;
+        }
+
+        // Always load avatar from DB so profile uploads show in the navbar
+        try {
+          if (hasDatabase) {
+            const dbUser = await db.user.findUnique({
+              where: { id: token.id as string },
+              select: { image: true, name: true },
+            });
+            if (dbUser) {
+              if (dbUser.image) session.user.image = dbUser.image;
+              if (dbUser.name) session.user.name = dbUser.name;
+            }
+          } else if (typeof token.picture === "string") {
+            session.user.image = token.picture;
+          }
+        } catch {
+          if (typeof token.picture === "string") {
+            session.user.image = token.picture;
+          }
+        }
       }
       return session;
     },

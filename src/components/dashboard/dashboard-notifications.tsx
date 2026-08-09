@@ -34,8 +34,10 @@ export function DashboardNotifications({
   const [items, setItems] = useState(initial);
 
   async function handleClick(n: NotificationItem) {
-    // Dismiss only — no navigation
-    setItems((prev) => prev.filter((x) => x.id !== n.id));
+    // Keep recent notifications — mark read instead of removing
+    setItems((prev) =>
+      prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
+    );
 
     try {
       await fetch("/api/notifications", {
@@ -44,7 +46,7 @@ export function DashboardNotifications({
         body: JSON.stringify({ notificationId: n.id }),
       });
     } catch {
-      // ignore — already removed from UI
+      // ignore
     }
   }
 

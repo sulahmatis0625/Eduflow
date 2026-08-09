@@ -62,7 +62,7 @@ export async function TeacherDashboard({ user }: TeacherDashboardProps) {
               Welcome, {user.name?.split(" ")[0] || "Teacher"}!
             </h1>
             <p className="text-text-secondary">
-              Create courses from YouTube and manage your students
+              Create courses from YouTube videos and manage your students
             </p>
           </div>
         </div>
@@ -76,22 +76,22 @@ export async function TeacherDashboard({ user }: TeacherDashboardProps) {
           <Link href="/dashboard/classrooms/new">
             <Button size="sm">
               <Plus className="h-4 w-4 mr-2" />
-              Create Course
+              Create Classroom
             </Button>
           </Link>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         {stats.map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="flex items-center gap-4">
-              <div className={`p-3 rounded-xl ${stat.color}`}>
-                <stat.icon className="h-6 w-6" />
+          <Card key={stat.label} className="min-h-[160px]">
+            <CardContent className="flex h-full min-h-[160px] flex-col justify-between gap-6 py-8">
+              <div className={`w-fit p-4 rounded-2xl ${stat.color}`}>
+                <stat.icon className="h-8 w-8" />
               </div>
               <div>
-                <p className="text-xs text-text-muted">{stat.label}</p>
-                <p className="text-2xl font-bold text-text-primary">
+                <p className="text-sm text-text-muted">{stat.label}</p>
+                <p className="text-4xl font-bold text-text-primary tracking-tight mt-1">
                   {stat.value}
                 </p>
               </div>
@@ -108,13 +108,13 @@ export async function TeacherDashboard({ user }: TeacherDashboardProps) {
               No courses yet
             </h3>
             <p className="text-sm text-text-secondary mb-4">
-              Create a course from a YouTube playlist, then manage it from My
-              Courses.
+              Create a course from a playlist or individual videos, then manage
+              it from My Courses.
             </p>
             <Link href="/dashboard/classrooms/new">
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
-                Create Course
+                Create Classroom
               </Button>
             </Link>
           </CardContent>

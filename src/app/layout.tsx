@@ -5,6 +5,14 @@ import { Providers } from "@/components/providers";
 export const metadata: Metadata = {
   title: "EduFlow - Online Learning Platform",
   description: "Empowering learners worldwide with high-quality online education. Learn at your own pace, earn certificates, and advance your career.",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

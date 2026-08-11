@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/toast";
 import { GraduationCap, PlayCircle, CheckCircle, Loader2 } from "lucide-react";
 
 interface EnrollButtonProps {
@@ -13,6 +13,8 @@ interface EnrollButtonProps {
   isFree: boolean;
   isEnrolled: boolean;
   enrollmentStatus?: string | null;
+  /** First lesson id — used to open the learn player correctly */
+  firstLessonId?: string | null;
   price?: number;
   formattedPrice?: string;
   className?: string;
@@ -21,40 +23,46 @@ interface EnrollButtonProps {
 
 export function EnrollButton({
   courseId,
-  courseSlug,
   isFree,
   isEnrolled,
   enrollmentStatus,
-  price,
+  firstLessonId,
   formattedPrice,
   className,
   size = "lg",
 }: EnrollButtonProps) {
   const router = useRouter();
   const { data: session } = useSession();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Already enrolled and completed
+  const goToLearn = () => {
+    if (firstLessonId) {
+      router.push(`/learn/${courseId}/${firstLessonId}`);
+    } else {
+      router.push(`/learn/${courseId}`);
+    }
+  };
+
   if (enrollmentStatus === "COMPLETED") {
     return (
       <div className={className}>
-        <Badge variant="success" size="md">
-          <CheckCircle className="h-3.5 w-3.5 mr-1" />
-          Completed
-        </Badge>
+        <Button variant="success" size={size} className="w-full" onClick={goToLearn}>
+          <CheckCircle className="mr-2 h-5 w-5" />
+          Review Course
+        </Button>
       </div>
     );
   }
 
-  // Enrolled and active - show continue learning
   if (isEnrolled && (enrollmentStatus === "ACTIVE" || enrollmentStatus === "APPROVED")) {
     return (
       <Button
         variant="success"
         size={size}
         className={className}
-        onClick={() => router.push(`/learn/${courseSlug}`)}
+        onClick={goToLearn}
       >
         <PlayCircle className="mr-2 h-5 w-5" />
         Continue Learning
@@ -62,7 +70,6 @@ export function EnrollButton({
     );
   }
 
-  // Enrollment pending
   if (enrollmentStatus === "PENDING") {
     return (
       <Button variant="secondary" size={size} className={className} disabled>
@@ -72,7 +79,6 @@ export function EnrollButton({
     );
   }
 
-  // Not enrolled - show enroll button
   const handleEnroll = async () => {
     if (!session?.user) {
       router.push("/login");
@@ -92,23 +98,20 @@ export function EnrollButton({
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.requiresPayment) {
-          router.push(`/courses/${courseSlug}/checkout`);
-          return;
-        }
         if (res.status === 409) {
-          // Already enrolled, refresh the page
+          toast("info", "You're already enrolled in this course");
           router.refresh();
           return;
         }
         throw new Error(data.error || "Failed to enroll");
       }
 
-      // Enrollment successful - redirect to course learning page
-      router.push(`/learn/${courseSlug}`);
+      toast("success", "Enrolled successfully!");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+      toast("error", message);
       setIsLoading(false);
     }
   };

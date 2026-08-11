@@ -7,13 +7,8 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  Award,
-  Download,
-  ExternalLink,
-  GraduationCap,
-  Calendar,
-} from "lucide-react";
+import { Award, GraduationCap, Calendar } from "lucide-react";
+import { CertificateActions } from "@/components/dashboard/certificate-actions";
 
 export const metadata = {
   title: "My Certificates | EduFlow",
@@ -105,25 +100,8 @@ export default async function CertificatesPage() {
                 </div>
               </CardContent>
 
-              <CardFooter className="flex gap-2">
-                <Link
-                  href={`/certificates/${cert.certificateId}`}
-                  className="flex-1"
-                >
-                  <Button variant="outline" size="sm" className="w-full">
-                    <ExternalLink className="h-4 w-4 mr-1.5" />
-                    Verify
-                  </Button>
-                </Link>
-                <Link
-                  href={`/certificates/${cert.certificateId}/download`}
-                  className="flex-1"
-                >
-                  <Button variant="primary" size="sm" className="w-full">
-                    <Download className="h-4 w-4 mr-1.5" />
-                    Download
-                  </Button>
-                </Link>
+              <CardFooter>
+                <CertificateActions certificateId={cert.certificateId} />
               </CardFooter>
             </Card>
           ))}

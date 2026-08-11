@@ -43,18 +43,15 @@ export function NotificationActions(props: NotificationActionsProps) {
     }
   }
 
-  async function markOneRead(notificationId: string, link?: string | null) {
+  async function markOneRead(notificationId: string) {
     try {
       await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notificationId }),
       });
-      if (link) {
-        router.push(link);
-      } else {
-        router.refresh();
-      }
+      // Dismiss only — stay on this page
+      router.refresh();
     } catch {
       console.error("Failed to mark as read");
     }
@@ -78,11 +75,7 @@ export function NotificationActions(props: NotificationActionsProps) {
     <div
       className="cursor-pointer"
       onClick={() => {
-        if (!props.isRead) {
-          markOneRead(props.notificationId, props.link);
-        } else if (props.link) {
-          router.push(props.link);
-        }
+        markOneRead(props.notificationId);
       }}
     >
       {props.children}

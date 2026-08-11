@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -31,6 +30,7 @@ interface Lesson {
   title: string;
   type: string;
   content: string | null;
+  videoUrl?: string | null;
   duration: number;
   order: number;
   sectionId: string;
@@ -48,14 +48,14 @@ interface Section {
 }
 
 const LESSON_TYPE_OPTIONS = [
-  { value: "VIDEO", label: "Video" },
-  { value: "TEXT", label: "Text" },
+  { value: "VIDEO", label: "Video (YouTube URL)" },
+  { value: "FILE", label: "PDF / File" },
   { value: "QUIZ", label: "Quiz" },
-  { value: "ASSIGNMENT", label: "Assignment" },
 ];
 
 const LESSON_TYPE_ICONS: Record<string, typeof Video> = {
   VIDEO: Video,
+  FILE: FileText,
   TEXT: FileText,
   QUIZ: HelpCircle,
   ASSIGNMENT: ClipboardList,
@@ -87,8 +87,9 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
   // Lesson form state
   const [showLessonFormForSection, setShowLessonFormForSection] = useState<string | null>(null);
   const [lessonTitle, setLessonTitle] = useState("");
-  const [lessonType, setLessonType] = useState("VIDEO");
-  const [lessonContent, setLessonContent] = useState("");
+  const [lessonType, setLessonType] = useState("");
+  const [lessonVideoUrl, setLessonVideoUrl] = useState("");
+  const [lessonFileUrl, setLessonFileUrl] = useState("");
   const [lessonDuration, setLessonDuration] = useState("");
   const [submittingLesson, setSubmittingLesson] = useState(false);
 
@@ -226,11 +227,11 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
   function openLessonForm(sectionId: string) {
     setShowLessonFormForSection(sectionId);
     setLessonTitle("");
-    setLessonType("VIDEO");
-    setLessonContent("");
+    setLessonType("");
+    setLessonVideoUrl("");
+    setLessonFileUrl("");
     setLessonDuration("");
     setError("");
-    // Ensure section is expanded
     setExpandedSections((prev) => new Set([...prev, sectionId]));
   }
 
@@ -238,23 +239,43 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
     e.preventDefault();
     setError("");
 
+    if (!lessonType) {
+      setError("Choose a lesson type first.");
+      return;
+    }
     if (!lessonTitle.trim()) {
       setError("Lesson title is required.");
+      return;
+    }
+    if (lessonType === "VIDEO" && !lessonVideoUrl.trim()) {
+      setError("Paste a YouTube video URL.");
+      return;
+    }
+    if (lessonType === "FILE" && !lessonFileUrl.trim()) {
+      setError("Paste a PDF or file URL.");
       return;
     }
 
     setSubmittingLesson(true);
     try {
+      const payload: Record<string, unknown> = {
+        title: lessonTitle.trim(),
+        type: lessonType === "FILE" ? "FILE" : lessonType,
+        sectionId,
+        duration: lessonDuration ? parseInt(lessonDuration, 10) : 0,
+      };
+      if (lessonType === "VIDEO") {
+        payload.videoUrl = lessonVideoUrl.trim();
+      }
+      if (lessonType === "FILE") {
+        payload.videoUrl = lessonFileUrl.trim();
+        payload.content = lessonFileUrl.trim();
+      }
+
       const res = await fetch(`/api/classrooms/${courseId}/lessons`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: lessonTitle.trim(),
-          type: lessonType,
-          sectionId,
-          content: lessonType === "TEXT" ? lessonContent : undefined,
-          duration: lessonDuration ? parseInt(lessonDuration, 10) : 0,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -271,8 +292,9 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
       );
       setShowLessonFormForSection(null);
       setLessonTitle("");
-      setLessonType("VIDEO");
-      setLessonContent("");
+      setLessonType("");
+      setLessonVideoUrl("");
+      setLessonFileUrl("");
       setLessonDuration("");
     } catch {
       setError("Something went wrong. Please try again.");
@@ -284,8 +306,14 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
   function startEditLesson(lesson: Lesson) {
     setEditingLessonId(lesson.id);
     setEditLessonTitle(lesson.title);
-    setEditLessonType(lesson.type);
-    setEditLessonContent(lesson.content || "");
+    const normalizedType =
+      lesson.type === "VIDEO" || lesson.type === "FILE" || lesson.type === "QUIZ"
+        ? lesson.type
+        : lesson.videoUrl
+          ? "VIDEO"
+          : "FILE";
+    setEditLessonType(normalizedType);
+    setEditLessonContent(lesson.videoUrl || lesson.content || "");
     setEditLessonDuration(lesson.duration > 0 ? String(lesson.duration) : "");
   }
 
@@ -300,7 +328,12 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
         body: JSON.stringify({
           title: editLessonTitle.trim(),
           type: editLessonType,
-          content: editLessonType === "TEXT" ? editLessonContent : undefined,
+          videoUrl:
+            editLessonType === "VIDEO" || editLessonType === "FILE"
+              ? editLessonContent.trim()
+              : null,
+          content:
+            editLessonType === "FILE" ? editLessonContent.trim() : undefined,
           duration: editLessonDuration ? parseInt(editLessonDuration, 10) : 0,
         }),
       });
@@ -555,30 +588,43 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
                               value={editLessonTitle}
                               onChange={(e) => setEditLessonTitle(e.target.value)}
                             />
-                            <div className="grid grid-cols-2 gap-3">
-                              <Select
-                                label="Type"
-                                options={LESSON_TYPE_OPTIONS}
-                                value={editLessonType}
-                                onChange={(e) => setEditLessonType(e.target.value)}
+                            <Select
+                              label="Type"
+                              options={LESSON_TYPE_OPTIONS}
+                              value={editLessonType}
+                              onChange={(e) => setEditLessonType(e.target.value)}
+                            />
+                            {editLessonType === "VIDEO" && (
+                              <Input
+                                label="YouTube video URL"
+                                value={editLessonContent}
+                                onChange={(e) =>
+                                  setEditLessonContent(e.target.value)
+                                }
+                                placeholder="https://www.youtube.com/watch?v=..."
                               />
+                            )}
+                            {editLessonType === "FILE" && (
+                              <Input
+                                label="PDF / file URL"
+                                value={editLessonContent}
+                                onChange={(e) =>
+                                  setEditLessonContent(e.target.value)
+                                }
+                                placeholder="https://.../document.pdf"
+                              />
+                            )}
+                            {(editLessonType === "VIDEO" ||
+                              editLessonType === "FILE") && (
                               <Input
                                 label="Duration (min)"
                                 name="editLessonDuration"
                                 type="number"
                                 placeholder="0"
                                 value={editLessonDuration}
-                                onChange={(e) => setEditLessonDuration(e.target.value)}
-                              />
-                            </div>
-                            {editLessonType === "TEXT" && (
-                              <Textarea
-                                label="Content"
-                                name="editLessonContent"
-                                placeholder="Lesson content..."
-                                value={editLessonContent}
-                                onChange={(e) => setEditLessonContent(e.target.value)}
-                                rows={4}
+                                onChange={(e) =>
+                                  setEditLessonDuration(e.target.value)
+                                }
                               />
                             )}
                             <div className="flex items-center gap-2">
@@ -668,40 +714,76 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
                             </button>
                           </div>
 
-                          <Input
-                            label="Lesson Title"
-                            name="lessonTitle"
-                            placeholder="e.g., Getting Started"
-                            value={lessonTitle}
-                            onChange={(e) => setLessonTitle(e.target.value)}
+                          <Select
+                            label="Lesson type"
+                            options={[
+                              { value: "", label: "Select type…" },
+                              ...LESSON_TYPE_OPTIONS,
+                            ]}
+                            value={lessonType}
+                            onChange={(e) => {
+                              setLessonType(e.target.value);
+                              setError("");
+                            }}
                           />
 
-                          <div className="grid grid-cols-2 gap-3">
-                            <Select
-                              label="Type"
-                              options={LESSON_TYPE_OPTIONS}
-                              value={lessonType}
-                              onChange={(e) => setLessonType(e.target.value)}
-                            />
-                            <Input
-                              label="Duration (min)"
-                              name="lessonDuration"
-                              type="number"
-                              placeholder="0"
-                              value={lessonDuration}
-                              onChange={(e) => setLessonDuration(e.target.value)}
-                            />
-                          </div>
+                          {lessonType && (
+                            <>
+                              <Input
+                                label="Lesson Title"
+                                name="lessonTitle"
+                                placeholder="e.g., Getting Started"
+                                value={lessonTitle}
+                                onChange={(e) => setLessonTitle(e.target.value)}
+                              />
 
-                          {lessonType === "TEXT" && (
-                            <Textarea
-                              label="Content"
-                              name="lessonContent"
-                              placeholder="Lesson content..."
-                              value={lessonContent}
-                              onChange={(e) => setLessonContent(e.target.value)}
-                              rows={4}
-                            />
+                              {lessonType === "VIDEO" && (
+                                <Input
+                                  label="YouTube video URL"
+                                  name="lessonVideoUrl"
+                                  placeholder="https://www.youtube.com/watch?v=..."
+                                  value={lessonVideoUrl}
+                                  onChange={(e) =>
+                                    setLessonVideoUrl(e.target.value)
+                                  }
+                                />
+                              )}
+
+                              {lessonType === "FILE" && (
+                                <Input
+                                  label="PDF / file URL"
+                                  name="lessonFileUrl"
+                                  placeholder="https://.../document.pdf"
+                                  value={lessonFileUrl}
+                                  onChange={(e) =>
+                                    setLessonFileUrl(e.target.value)
+                                  }
+                                />
+                              )}
+
+                              {lessonType === "QUIZ" && (
+                                <p className="text-xs text-text-muted">
+                                  Creates a quiz lesson placeholder. Build the
+                                  full quiz (questions &amp; answers) in the{" "}
+                                  <span className="text-brand">Assessments</span>{" "}
+                                  tab.
+                                </p>
+                              )}
+
+                              {(lessonType === "VIDEO" ||
+                                lessonType === "FILE") && (
+                                <Input
+                                  label="Duration (min)"
+                                  name="lessonDuration"
+                                  type="number"
+                                  placeholder="Optional"
+                                  value={lessonDuration}
+                                  onChange={(e) =>
+                                    setLessonDuration(e.target.value)
+                                  }
+                                />
+                              )}
+                            </>
                           )}
 
                           {error && showLessonFormForSection === section.id && (
@@ -714,6 +796,7 @@ export function ClassroomCurriculum({ courseId }: ClassroomCurriculumProps) {
                               variant="primary"
                               size="sm"
                               isLoading={submittingLesson}
+                              disabled={!lessonType}
                             >
                               {submittingLesson ? "Adding..." : "Add Lesson"}
                             </Button>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
-const VALID_LESSON_TYPES = ["VIDEO", "TEXT", "QUIZ", "ASSIGNMENT", "LIVE"];
+const VALID_LESSON_TYPES = ["VIDEO", "TEXT", "FILE", "QUIZ", "ASSIGNMENT", "LIVE"];
 
 export async function POST(
   req: NextRequest,
@@ -31,7 +31,7 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { title, type, sectionId, content, duration, order } = body;
+    const { title, type, sectionId, content, duration, order, videoUrl, isFree, isPreview } = body;
 
     if (!title || typeof title !== "string" || !title.trim()) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
@@ -69,8 +69,11 @@ export async function POST(
         type: lessonType,
         sectionId,
         content: content || null,
+        videoUrl: videoUrl || null,
         duration: duration ? parseInt(String(duration), 10) : 0,
         order: lessonOrder,
+        isFree: !!isFree,
+        isPreview: !!isPreview,
       },
     });
 

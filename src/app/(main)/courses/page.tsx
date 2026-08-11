@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { formatPrice, formatDuration } from "@/lib/utils";
+import { auth } from "@/lib/auth";
+import { formatPrice } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StarRating } from "@/components/ui/star-rating";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Avatar } from "@/components/ui/avatar";
 import {
-  Search, BookOpen, Clock, Users, SlidersHorizontal,
+  Search, BookOpen, SlidersHorizontal,
   GraduationCap, Filter,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -31,6 +31,7 @@ interface CourseListItem {
   thumbnail: string | null;
   price: number;
   discountPrice: number | null;
+  currency?: string | null;
   isFree: boolean;
   level: string;
   status: string;
@@ -153,6 +154,9 @@ export default async function CoursesPage({
       orderBy = { createdAt: "desc" };
   }
 
+  const session = await auth();
+  let enrolledCourseIds = new Set<string>();
+
   try {
     if (!dataUnavailable && (process.env.DATABASE_URL || process.env.DIRECT_URL)) {
       courses = await db.course.findMany({
@@ -165,6 +169,18 @@ export default async function CoursesPage({
         },
         orderBy,
       });
+
+      if (session?.user?.id && courses.length > 0) {
+        const enrollments = await db.enrollment.findMany({
+          where: {
+            userId: session.user.id,
+            courseId: { in: courses.map((c) => c.id) },
+            status: { in: ["ACTIVE", "APPROVED", "COMPLETED"] },
+          },
+          select: { courseId: true },
+        });
+        enrolledCourseIds = new Set(enrollments.map((e) => e.courseId));
+      }
     }
   } catch (error) {
     console.error("Failed to load courses:", error);
@@ -371,10 +387,12 @@ export default async function CoursesPage({
                   const avgRating = course.reviews.length > 0
                     ? course.reviews.reduce((s, r) => s + r.rating, 0) / course.reviews.length
                     : 0;
+                  const displayPrice = course.discountPrice ?? course.price;
+                  const isEnrolled = enrolledCourseIds.has(course.id);
+
                   return (
                     <Link key={course.id} href={`/courses/${course.slug}`}>
-                      <Card hover className="overflow-hidden h-full flex flex-col">
-                        {/* Thumbnail */}
+                      <Card hover className="overflow-hidden h-full flex flex-col group">
                         <div className="relative h-44 bg-gradient-to-br from-surface-3 to-surface-2 overflow-hidden">
                           {course.thumbnail ? (
                             <img
@@ -387,88 +405,52 @@ export default async function CoursesPage({
                               <BookOpen className="h-12 w-12 text-text-muted" />
                             </div>
                           )}
-                          {course.isFree && (
-                            <span className="absolute top-3 left-3 px-2.5 py-1 bg-brand text-black text-xs font-bold rounded-md">
-                              FREE
-                            </span>
-                          )}
-                          {course.discountPrice && !course.isFree && (
-                            <span className="absolute top-3 left-3 px-2.5 py-1 bg-red-500 text-white text-xs font-bold rounded-md">
-                              SALE
-                            </span>
-                          )}
                           <Badge
                             variant={getLevelBadgeVariant(course.level)}
                             className="absolute top-3 right-3"
                           >
-                            {course.level}
+                            {course.level.charAt(0) + course.level.slice(1).toLowerCase()}
                           </Badge>
                         </div>
 
-                        {/* Content */}
-                        <div className="p-5 flex flex-col flex-1">
-                          {course.category && (
-                            <span className="text-xs text-brand mb-1">
-                              {course.category.name}
-                            </span>
-                          )}
-                          <h3 className="font-semibold text-text-primary mb-2 line-clamp-2 leading-snug">
+                        <div className="p-5 flex flex-col flex-1 gap-3">
+                          <h3 className="font-semibold text-text-primary line-clamp-2 leading-snug group-hover:text-brand transition-colors">
                             {course.title}
                           </h3>
-                          <p className="text-sm text-text-secondary mb-3 line-clamp-2 flex-1">
-                            {course.shortDescription || course.description}
+
+                          <p className="text-sm text-text-secondary truncate">
+                            {course.instructor.name || "Instructor"}
                           </p>
 
-                          {/* Stats */}
-                          <div className="flex items-center gap-3 text-xs text-text-tertiary mb-3">
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3.5 w-3.5" />
-                              {formatDuration(course.duration)}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <BookOpen className="h-3.5 w-3.5" />
-                              {course.totalLessons} lessons
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Users className="h-3.5 w-3.5" />
-                              {course._count.enrollments}
-                            </span>
-                          </div>
+                          <StarRating
+                            rating={avgRating}
+                            size="sm"
+                            showValue
+                            totalReviews={course.reviews.length}
+                          />
 
-                          {/* Rating */}
-                          <div className="mb-3">
-                            <StarRating
-                              rating={avgRating}
-                              size="sm"
-                              showValue
-                              totalReviews={course.reviews.length}
-                            />
-                          </div>
-
-                          {/* Footer */}
-                          <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-                            <div className="flex items-center gap-2">
-                              <Avatar src={course.instructor.image} name={course.instructor.name} size="sm" />
-                              <span className="text-sm text-text-secondary truncate max-w-[120px]">
-                                {course.instructor.name}
+                          <div className="mt-auto pt-3 border-t border-white/[0.06] flex items-center justify-between">
+                            {isEnrolled ? (
+                              <span className="px-2.5 py-1 rounded-md bg-brand/15 text-brand text-sm font-semibold">
+                                Enrolled
                               </span>
-                            </div>
-                            <div className="text-right">
-                              {course.isFree ? (
-                                <span className="text-lg font-bold text-brand">Free</span>
-                              ) : (
-                                <div className="flex items-center gap-1.5">
-                                  {course.discountPrice && (
-                                    <span className="text-sm text-text-tertiary line-through">
-                                      {formatPrice(course.price)}
-                                    </span>
-                                  )}
-                                  <span className="text-lg font-bold text-text-primary">
-                                    {formatPrice(course.discountPrice ?? course.price)}
+                            ) : course.isFree ? (
+                              <span className="px-2.5 py-1 rounded-md bg-brand/15 text-brand text-sm font-semibold">
+                                Free
+                              </span>
+                            ) : (
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-lg font-bold text-text-primary">
+                                  {formatPrice(displayPrice, course.currency || "ETB")}
+                                </span>
+                                {course.discountPrice != null &&
+                                  Number(course.discountPrice) < Number(course.price) && (
+                                  <span className="text-sm text-text-tertiary line-through">
+                                    {formatPrice(course.price, course.currency || "ETB")}
                                   </span>
-                                </div>
-                              )}
-                            </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </Card>

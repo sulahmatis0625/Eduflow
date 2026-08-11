@@ -10,7 +10,7 @@ export default function MainLayout({
     <div className="min-h-screen flex flex-col bg-surface-0">
       <Navbar />
       <main className="flex-1 pt-16">{children}</main>
-      <Footer />
+      <Footer variant="minimal" />
     </div>
   );
 }

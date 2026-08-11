@@ -3,11 +3,11 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { TeacherDashboard } from "@/components/dashboard/teacher-dashboard";
+import { DashboardNotifications } from "@/components/dashboard/dashboard-notifications";
 import {
   getLevelFromXp,
   getXpForNextLevel,
   getXpProgress,
-  formatDate,
   cn,
 } from "@/lib/utils";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -21,7 +21,6 @@ import {
   Award,
   Zap,
   ArrowRight,
-  Bell,
   PlayCircle,
   Search,
   Clock,
@@ -72,7 +71,7 @@ export default async function DashboardPage() {
       where: { userId },
     }),
     db.notification.findMany({
-      where: { userId },
+      where: { userId, isRead: false },
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
@@ -91,8 +90,9 @@ export default async function DashboardPage() {
   const totalCertificates = certificates.length;
   const userXp = user.xp ?? 0;
   const userLevel = getLevelFromXp(userXp);
-  const xpForNext = getXpForNextLevel(userXp);
-  const xpProgress = getXpProgress(userXp);
+  const xpIntoLevel = getXpProgress(userXp);
+  const xpNeededForNext = 100;
+  const xpToNextLevel = getXpForNextLevel(userXp);
 
   const stats = [
     {
@@ -114,21 +114,12 @@ export default async function DashboardPage() {
       color: "bg-purple-500/10 text-purple-400",
     },
     {
-      label: `Level ${userLevel}`,
-      value: `${userXp} XP`,
+      label: "Total XP",
+      value: userXp,
       icon: Zap,
       color: "bg-gold/10 text-gold",
     },
   ];
-
-  const notificationTypeColors: Record<string, "default" | "success" | "warning" | "danger" | "info" | "purple"> = {
-    INFO: "info",
-    SUCCESS: "success",
-    WARNING: "warning",
-    COURSE: "purple",
-    PAYMENT: "default",
-    ACHIEVEMENT: "success",
-  };
 
   return (
     <div className="space-y-8">
@@ -184,28 +175,35 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* XP Progress Bar */}
+      {/* Single level progress — 100 XP per level */}
       <Card>
         <CardContent>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">
               <Zap className="h-5 w-5 text-gold" />
               <span className="font-semibold text-text-primary">
-                Level {userLevel} Progress
+                Level {userLevel}
+              </span>
+              <span className="text-xs text-text-muted">
+                · {userXp} XP total · next level at {xpToNextLevel} XP
               </span>
             </div>
             <span className="text-sm text-text-secondary">
-              {xpProgress} / {100} XP to Level {userLevel + 1}
+              {xpIntoLevel} / {xpNeededForNext} XP to Level {userLevel + 1}
             </span>
           </div>
-          <Progress value={xpProgress} max={100} color="gold" size="md" />
+          <Progress value={xpIntoLevel} max={xpNeededForNext} color="gold" size="md" />
+          <p className="text-xs text-text-muted mt-2">
+            Earn XP by completing lessons and quizzes. Every 100 XP raises your
+            level by 1.
+          </p>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:items-stretch">
         {/* Recent Courses */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
+          <div className="flex items-center justify-between shrink-0">
             <h2 className="text-sm font-medium text-brand">
               Recent Courses
             </h2>
@@ -218,13 +216,13 @@ export default async function DashboardPage() {
           </div>
 
           {recentCourses.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
+            <Card className="flex-1 flex flex-col min-h-[280px]">
+              <CardContent className="flex-1 flex flex-col items-center justify-center text-center py-12">
                 <BookOpen className="h-12 w-12 text-text-muted mx-auto mb-3" />
                 <h3 className="text-lg font-semibold text-text-primary mb-1">
                   No courses yet
                 </h3>
-                <p className="text-sm text-text-secondary mb-4">
+                <p className="text-sm text-text-secondary mb-4 max-w-sm">
                   Start your learning journey by enrolling in a course.
                 </p>
                 <Link href="/courses">
@@ -233,165 +231,65 @@ export default async function DashboardPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 flex-1">
               {recentCourses.map((enrollment) => (
-                <Card key={enrollment.id} hover>
-                  <CardContent>
-                    <div className="flex items-center gap-4">
-                      <div className="flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-white/[0.03]">
-                        {enrollment.course.thumbnail ? (
-                          <img
-                            src={enrollment.course.thumbnail}
-                            alt={enrollment.course.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <BookOpen className="h-6 w-6 text-text-tertiary" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold text-text-primary truncate">
-                          {enrollment.course.title}
-                        </h3>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-text-secondary">
-                          <span className="flex items-center gap-1">
-                            <BookOpen className="h-3 w-3" />
-                            {enrollment.course.totalLessons} lessons
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {Math.round(enrollment.progress)}% complete
-                          </span>
+                <Link
+                  key={enrollment.id}
+                  href={`/learn/${enrollment.course.id}`}
+                  className="block group"
+                >
+                  <Card hover>
+                    <CardContent>
+                      <div className="flex items-center gap-4">
+                        <div className="flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-white/[0.03]">
+                          {enrollment.course.thumbnail ? (
+                            <img
+                              src={enrollment.course.thumbnail}
+                              alt={enrollment.course.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <BookOpen className="h-6 w-6 text-text-tertiary" />
+                            </div>
+                          )}
                         </div>
-                        <Progress
-                          value={enrollment.progress}
-                          size="sm"
-                          color="brand"
-                          className="mt-2"
-                        />
-                      </div>
-                      <Link href={`/courses/${enrollment.course.slug}`}>
-                        <Button variant="ghost" size="sm">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-sm font-semibold text-text-primary truncate group-hover:text-brand transition-colors">
+                            {enrollment.course.title}
+                          </h3>
+                          <div className="flex items-center gap-3 mt-1 text-xs text-text-secondary">
+                            <span className="flex items-center gap-1">
+                              <BookOpen className="h-3 w-3" />
+                              {enrollment.course.totalLessons} lessons
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {Math.round(enrollment.progress)}% complete
+                            </span>
+                          </div>
+                          <Progress
+                            value={enrollment.progress}
+                            size="sm"
+                            color="brand"
+                            className="mt-2"
+                          />
+                        </div>
+                        <Button variant="ghost" size="sm" tabIndex={-1}>
                           <PlayCircle className="h-4 w-4" />
                         </Button>
-                      </Link>
-                    </div>
-                  </CardContent>
-                </Card>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
               ))}
             </div>
           )}
         </div>
 
         {/* Notifications Panel */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-brand">
-              Notifications
-            </h2>
-            <Bell className="h-5 w-5 text-text-tertiary" />
-          </div>
-
-          <Card>
-            {notifications.length === 0 ? (
-              <CardContent className="text-center py-8">
-                <Bell className="h-10 w-10 text-text-muted mx-auto mb-2" />
-                <p className="text-sm text-text-secondary">
-                  No notifications yet
-                </p>
-              </CardContent>
-            ) : (
-              <div className="divide-y divide-white/[0.06]">
-                {notifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className={cn(
-                      "px-4 py-3",
-                      !notification.isRead &&
-                        "bg-brand/5"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <p className="text-sm font-medium text-text-primary truncate">
-                            {notification.title}
-                          </p>
-                          {!notification.isRead && (
-                            <span className="flex-shrink-0 h-2 w-2 rounded-full bg-brand" />
-                          )}
-                        </div>
-                        <p className="text-xs text-text-secondary line-clamp-2">
-                          {notification.message}
-                        </p>
-                        <p className="text-xs text-text-tertiary mt-1">
-                          {formatDate(notification.createdAt)}
-                        </p>
-                      </div>
-                      <Badge
-                        variant={
-                          notificationTypeColors[notification.type] || "default"
-                        }
-                        size="sm"
-                      >
-                        {notification.type}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          {/* Quick Actions */}
-          <div>
-            <h2 className="text-sm font-medium text-brand mb-3">
-              Quick Actions
-            </h2>
-            <div className="space-y-2">
-              <Link href="/courses" className="block">
-                <Card hover>
-                  <CardContent className="flex items-center gap-3 py-3">
-                    <div className="p-2 rounded-lg bg-brand/10">
-                      <Search className="h-4 w-4 text-brand" />
-                    </div>
-                    <span className="text-sm font-medium text-text-primary">
-                      Browse Courses
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-text-tertiary ml-auto" />
-                  </CardContent>
-                </Card>
-              </Link>
-              <Link href="/dashboard/achievements" className="block">
-                <Card hover>
-                  <CardContent className="flex items-center gap-3 py-3">
-                    <div className="p-2 rounded-lg bg-gold/10">
-                      <Award className="h-4 w-4 text-gold" />
-                    </div>
-                    <span className="text-sm font-medium text-text-primary">
-                      View Achievements
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-text-tertiary ml-auto" />
-                  </CardContent>
-                </Card>
-              </Link>
-              <Link href="/dashboard/certificates" className="block">
-                <Card hover>
-                  <CardContent className="flex items-center gap-3 py-3">
-                    <div className="p-2 rounded-lg bg-purple-500/10">
-                      <Award className="h-4 w-4 text-purple-400" />
-                    </div>
-                    <span className="text-sm font-medium text-text-primary">
-                      My Certificates
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-text-tertiary ml-auto" />
-                  </CardContent>
-                </Card>
-              </Link>
-            </div>
-          </div>
+        <div className="flex flex-col gap-4">
+          <DashboardNotifications initial={notifications} />
         </div>
       </div>
     </div>

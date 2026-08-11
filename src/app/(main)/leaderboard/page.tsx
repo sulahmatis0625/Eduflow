@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -86,7 +87,7 @@ async function getLeaderboardData(period: "all" | "month" | "week"): Promise<Lea
   const users = await db.user.findMany({
     where: {
       isActive: true,
-      role: { not: "ADMIN" },
+      role: "STUDENT",
       ...(dateFilter ? { updatedAt: { gte: dateFilter } } : {}),
     },
     select: {
@@ -112,6 +113,12 @@ async function getLeaderboardData(period: "all" | "month" | "week"): Promise<Lea
 
 export default async function LeaderboardPage() {
   const session = await auth();
+  if (
+    session?.user?.role === "INSTRUCTOR" ||
+    session?.user?.role === "ADMIN"
+  ) {
+    redirect("/dashboard");
+  }
 
   const [allTimeUsers, monthUsers, weekUsers] = await Promise.all([
     getLeaderboardData("all"),
@@ -121,7 +128,7 @@ export default async function LeaderboardPage() {
 
   // Get total user count for stats
   const totalStudents = await db.user.count({
-    where: { isActive: true, role: { not: "ADMIN" } },
+    where: { isActive: true, role: "STUDENT" },
   }).catch(() => 0);
 
   const topXp = allTimeUsers.length > 0 ? allTimeUsers[0].xp : 0;

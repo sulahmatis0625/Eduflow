@@ -29,3 +29,7 @@ Thumbs.db
 
 # SQLite journal files
 dev.db-*
+
+# User uploads (keep folder via gitkeep)
+public/uploads/avatars/*
+!public/uploads/avatars/.gitkeep

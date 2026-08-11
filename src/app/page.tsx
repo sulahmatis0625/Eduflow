@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { TrialVideoModal } from "@/components/home/trial-video-modal";
@@ -9,8 +10,14 @@ import {
   TrendingUp, Video, MessageSquare, BarChart3,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
 
 export default async function HomePage() {
+  const session = await auth();
+  if (session?.user) {
+    redirect("/dashboard");
+  }
+
   const [courseCount, userCount, certificateCount] = await Promise.all([
     db.course.count({ where: { status: "PUBLISHED" } }).catch(() => 0),
     db.user.count().catch(() => 0),
@@ -24,13 +31,13 @@ export default async function HomePage() {
       category: true,
       reviews: true,
     },
-    take: 6,
+    take: 2,
     orderBy: { createdAt: "desc" },
   }).catch(() => []);
 
   const categories = await db.category.findMany({
-    include: { _count: { select: { courses: true } } },
-    take: 8,
+    select: { id: true, name: true, slug: true, icon: true },
+    take: 24,
   }).catch(() => []);
 
   return (
@@ -201,13 +208,11 @@ export default async function HomePage() {
           CATEGORIES SECTION
       ═══════════════════════════════════════════ */}
       {categories.length > 0 && (
-        <section className="py-24 bg-surface-1">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center justify-between mb-12">
+        <section className="py-24 bg-surface-1 overflow-hidden">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 mb-10">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-brand text-sm font-medium mb-2">
-                  Explore
-                </p>
+                <p className="text-brand text-sm font-medium mb-2">Explore</p>
                 <h2 className="text-3xl font-bold">Browse Categories</h2>
               </div>
               <Link
@@ -218,22 +223,21 @@ export default async function HomePage() {
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {categories.map((cat) => (
+          </div>
+          <div className="relative w-full overflow-hidden">
+            <div className="flex w-max animate-marquee hover:[animation-play-state:paused]">
+              {[...categories, ...categories].map((cat, i) => (
                 <Link
-                  key={cat.id}
+                  key={`${cat.id}-${i}`}
                   href={`/courses?category=${cat.slug}`}
-                  className="group flex items-center gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-brand/30 transition-all duration-300"
+                  className="group mx-2 flex shrink-0 flex-col items-center justify-center gap-3 w-36 h-36 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-brand/40 hover:bg-brand/5 transition-all duration-300"
                 >
-                  <span className="text-2xl">{cat.icon || "📚"}</span>
-                  <div>
-                    <p className="font-medium text-text-primary group-hover:text-brand transition-colors">
-                      {cat.name}
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      {cat._count.courses} courses
-                    </p>
-                  </div>
+                  <span className="text-3xl leading-none" aria-hidden>
+                    {cat.icon || "📚"}
+                  </span>
+                  <p className="text-sm font-medium text-text-primary text-center px-2 group-hover:text-brand transition-colors line-clamp-2">
+                    {cat.name}
+                  </p>
                 </Link>
               ))}
             </div>
@@ -242,7 +246,7 @@ export default async function HomePage() {
       )}
 
       {/* ═══════════════════════════════════════════
-          FEATURED COURSES SECTION
+          NEWLY ADDED COURSES
       ═══════════════════════════════════════════ */}
       {featuredCourses.length > 0 && (
         <section className="py-24 bg-surface-0">
@@ -250,9 +254,11 @@ export default async function HomePage() {
             <div className="flex items-center justify-between mb-12">
               <div>
                 <p className="text-brand text-sm font-medium mb-2">
-                  Top Picks
+                  Fresh releases
                 </p>
-                <h2 className="text-3xl font-bold">Featured Courses</h2>
+                <h2 className="text-3xl font-bold">
+                  Newly added to the collection
+                </h2>
               </div>
               <Link
                 href="/courses"
@@ -263,7 +269,7 @@ export default async function HomePage() {
               </Link>
             </div>
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 gap-6 max-w-4xl">
               {featuredCourses.map((course) => {
                 const avgRating =
                   course.reviews.length > 0
@@ -272,8 +278,7 @@ export default async function HomePage() {
                     : 0;
                 return (
                   <Link key={course.id} href={`/courses/${course.slug}`}>
-                    <div className="group bg-surface-2 border border-white/[0.06] rounded-xl overflow-hidden hover:border-brand/20 transition-all duration-300">
-                      {/* Thumbnail */}
+                    <div className="group bg-surface-2 border border-white/[0.06] rounded-xl overflow-hidden hover:border-brand/20 transition-all duration-300 h-full flex flex-col">
                       <div className="relative h-48 bg-surface-3 overflow-hidden">
                         {course.thumbnail ? (
                           <img
@@ -286,38 +291,22 @@ export default async function HomePage() {
                             <BookOpen className="h-12 w-12 text-text-muted" />
                           </div>
                         )}
-                        {/* Gradient overlay */}
                         <div className="absolute inset-0 bg-gradient-to-t from-surface-2/80 to-transparent" />
-
-                        {/* Badges */}
-                        {course.isFree && (
-                          <span className="absolute top-3 left-3 px-2.5 py-1 bg-brand text-surface-0 text-xs font-semibold rounded-md">
-                            Free
-                          </span>
-                        )}
                         {course.level && (
                           <span className="absolute top-3 right-3 px-2.5 py-1 bg-white/10 backdrop-blur-sm text-white/80 text-xs rounded-md">
-                            {course.level}
+                            {course.level.charAt(0) + course.level.slice(1).toLowerCase()}
                           </span>
                         )}
                       </div>
 
-                      {/* Content */}
-                      <div className="p-5">
-                        {course.category && (
-                          <span className="text-brand text-xs font-medium">
-                            {course.category.name}
-                          </span>
-                        )}
-                        <h3 className="font-semibold text-text-primary mt-1.5 mb-2 line-clamp-2 group-hover:text-brand transition-colors">
+                      <div className="p-5 flex flex-col flex-1 gap-3">
+                        <h3 className="font-semibold text-text-primary line-clamp-2 group-hover:text-brand transition-colors">
                           {course.title}
                         </h3>
-                        <p className="text-sm text-text-tertiary mb-3 line-clamp-2">
-                          {course.shortDescription || course.description}
+                        <p className="text-sm text-text-tertiary truncate">
+                          {course.instructor.name}
                         </p>
-
-                        {/* Rating */}
-                        <div className="flex items-center gap-2 mb-4">
+                        <div className="flex items-center gap-2 mt-auto">
                           <div className="flex items-center gap-0.5">
                             {[1, 2, 3, 4, 5].map((s) => (
                               <Star
@@ -335,16 +324,6 @@ export default async function HomePage() {
                           </span>
                           <span className="text-xs text-text-muted">
                             ({course.reviews.length})
-                          </span>
-                        </div>
-
-                        {/* Footer */}
-                        <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
-                          <span className="text-sm text-text-tertiary">
-                            {course.instructor.name}
-                          </span>
-                          <span className="text-lg font-bold text-brand">
-                            {course.isFree ? "Free" : `$${course.price}`}
                           </span>
                         </div>
                       </div>
@@ -429,7 +408,7 @@ export default async function HomePage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
-              href="/register"
+              href="/register?trial=1"
               className="inline-flex items-center justify-center gap-2 px-10 py-4 bg-gold text-surface-0 font-semibold text-sm rounded-full hover:scale-[1.03] transition-all duration-300"
             >
               Get Started Free
@@ -445,7 +424,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <Footer />
+      <Footer variant="full" />
     </div>
   );
 }

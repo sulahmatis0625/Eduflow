@@ -110,7 +110,7 @@ model Course {
   duration      Int      @default(0) // total minutes
   totalLessons  Int      @default(0)
   maxStudents   Int?
-  passingGrade  Float    @default(70)
+  passingGrade  Float    @default(50)
   certificateEnabled Boolean @default(true)
   tags          String?  // comma separated
   requirements  String?
@@ -256,7 +256,7 @@ model Quiz {
   description  String?
   courseId      String
   timeLimit    Int?     // minutes
-  passingScore Float    @default(70)
+  passingScore Float    @default(50)
   maxAttempts  Int      @default(3)
   order        Int      @default(0)
   isActive     Boolean  @default(true)

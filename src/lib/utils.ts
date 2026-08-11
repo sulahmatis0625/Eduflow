@@ -5,11 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatPrice(price: number, currency = "USD") {
+export function formatPrice(price: number, currency = "ETB") {
+  const amount = Math.round(Number(price) || 0);
+  const code = (currency || "ETB").toUpperCase();
+
+  if (code === "ETB") {
+    return `Br ${amount.toLocaleString("en-US")}`;
+  }
+
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency,
-  }).format(price);
+    currency: code,
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 export function formatDuration(minutes: number) {

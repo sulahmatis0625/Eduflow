@@ -66,26 +66,72 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, description, shortDescription, price, level, categoryId, isFree, tags, requirements, whatYouLearn, targetAudience } = body;
+    const {
+      title,
+      description,
+      shortDescription,
+      price,
+      level,
+      categoryId,
+      isFree,
+      tags,
+      requirements,
+      whatYouLearn,
+      targetAudience,
+      thumbnail,
+      previewVideo,
+      status: requestedStatus,
+      currency,
+    } = body;
 
-    const slug = title.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, "-") + "-" + Date.now().toString(36);
+    if (!title || !description) {
+      return NextResponse.json(
+        { error: "Title and description are required" },
+        { status: 400 }
+      );
+    }
+
+    const slug =
+      title
+        .toLowerCase()
+        .replace(/[^\w\s]/g, "")
+        .replace(/\s+/g, "-")
+        .slice(0, 60) +
+      "-" +
+      Date.now().toString(36);
+
+    const free = !!isFree || parseFloat(price || "0") === 0;
+
+    // Wizard creates DRAFT first, then publishes after playlist import.
+    // Explicit PUBLISHED skips admin review (as requested for instructor flow).
+    let status = "DRAFT";
+    if (requestedStatus === "DRAFT" || requestedStatus === "PUBLISHED") {
+      status = requestedStatus;
+    } else if (session.user.role === "ADMIN" || free) {
+      status = "PUBLISHED";
+    } else {
+      status = "PENDING";
+    }
 
     const course = await db.course.create({
       data: {
-        title,
+        title: String(title).trim(),
         slug,
         description,
-        shortDescription,
-        price: isFree ? 0 : parseFloat(price || "0"),
+        shortDescription: shortDescription || null,
+        price: free ? 0 : parseFloat(price || "0"),
         level: level || "BEGINNER",
-        categoryId,
+        categoryId: categoryId || null,
         instructorId: session.user.id,
-        isFree: !!isFree,
-        tags,
-        requirements,
-        whatYouLearn,
-        targetAudience,
-        status: session.user.role === "ADMIN" ? "PUBLISHED" : "PENDING",
+        isFree: free,
+        tags: tags || null,
+        requirements: requirements || null,
+        whatYouLearn: whatYouLearn || null,
+        targetAudience: targetAudience || null,
+        thumbnail: thumbnail || null,
+        previewVideo: previewVideo || null,
+        currency: currency || "ETB",
+        status,
       },
     });
 

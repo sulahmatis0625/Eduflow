@@ -37,7 +37,11 @@ export default async function DashboardPage() {
   const userId = session.user.id as string;
   const role = session.user.role;
 
-  if (role === "INSTRUCTOR" || role === "ADMIN") {
+  if (role === "ADMIN") {
+    redirect("/admin");
+  }
+
+  if (role === "INSTRUCTOR") {
     const teacher = await db.user.findUnique({
       where: { id: userId },
       select: { id: true, name: true, image: true },

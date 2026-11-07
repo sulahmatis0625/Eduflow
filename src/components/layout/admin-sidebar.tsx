@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, BookOpen, Users, CreditCard,
   Award, Video, Settings, FileCheck, Megaphone,
-  GraduationCap, ArrowLeft, ClipboardList,
+  GraduationCap, ClipboardList,
 } from "lucide-react";
 
 export function AdminSidebar() {
@@ -58,15 +58,7 @@ export function AdminSidebar() {
         })}
       </nav>
 
-      <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-white/[0.06]">
-        <Link
-          href="/dashboard"
-          className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-text-tertiary hover:text-text-secondary hover:bg-white/[0.03] transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Platform
-        </Link>
-      </div>
+
     </aside>
   );
 }

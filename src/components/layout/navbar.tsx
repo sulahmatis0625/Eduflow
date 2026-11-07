@@ -225,12 +225,12 @@ export function Navbar() {
                 My Courses
               </Link>
               <Link
-                href="/dashboard"
-                className={navLinkClass(dashboardActive)}
-                aria-current={dashboardActive ? "page" : undefined}
-              >
-                Dashboard
-              </Link>
+                    href={session.user.role === "ADMIN" ? "/admin" : "/dashboard"}
+                    className={navLinkClass(dashboardActive || (session.user.role === "ADMIN" && pathname.startsWith("/admin")))}
+                    aria-current={dashboardActive ? "page" : undefined}
+                  >
+                    Dashboard
+                  </Link>
             </nav>
           )}
 

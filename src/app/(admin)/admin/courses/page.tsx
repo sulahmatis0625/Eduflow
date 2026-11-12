@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BookOpen, CheckCircle, Archive, Eye, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+   import Link from "next/link";
 
 interface Course {
   id: string;

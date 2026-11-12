@@ -36,10 +36,8 @@ const DEFAULT_SETTINGS: Record<string, { label: string; description: string; typ
     description: "The default currency for course pricing.",
     type: "select",
     options: [
+      { value: "ETB", label: "ETB - Ethiopian Birr (Default)" },
       { value: "USD", label: "USD - US Dollar" },
-      { value: "EUR", label: "EUR - Euro" },
-      { value: "GBP", label: "GBP - British Pound" },
-      { value: "TRY", label: "TRY - Turkish Lira" },
     ],
   },
   enrollment_approval: {

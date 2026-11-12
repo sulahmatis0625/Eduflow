@@ -106,36 +106,46 @@ sqls.push(`INSERT INTO "Lesson" (id, title, type, duration, "order", "isFree", "
 
 // Sections & Lessons for Course 1
 const sectionData = [
-  { title: "Getting Started", order: 1, lessons: [
-    ["Course Introduction", "VIDEO", 10, 1, true, true],
-    ["Setting Up Your Dev Environment", "VIDEO", 15, 2, true, false],
-    ["Understanding React Fundamentals", "TEXT", 20, 3, false, false],
-    ["Your First React Component", "VIDEO", 25, 4, false, false],
-  ]},
-  { title: "React Core Concepts", order: 2, lessons: [
-    ["JSX Deep Dive", "VIDEO", 20, 1, false, false],
-    ["Props and State", "VIDEO", 30, 2, false, false],
-    ["Event Handling", "VIDEO", 18, 3, false, false],
-    ["Conditional Rendering", "VIDEO", 15, 4, false, false],
-    ["Lists and Keys", "VIDEO", 22, 5, false, false],
-  ]},
-  { title: "React Hooks", order: 3, lessons: [
-    ["useState and useEffect", "VIDEO", 35, 1, false, false],
-    ["useContext", "VIDEO", 25, 2, false, false],
-    ["Custom Hooks", "VIDEO", 28, 3, false, false],
-  ]},
-  { title: "Next.js Fundamentals", order: 4, lessons: [
-    ["Introduction to Next.js", "VIDEO", 15, 1, false, false],
-    ["File-based Routing", "VIDEO", 25, 2, false, false],
-    ["Server vs Client Components", "VIDEO", 30, 3, false, false],
-    ["Data Fetching", "VIDEO", 35, 4, false, false],
-  ]},
-  { title: "Building a Full-Stack App", order: 5, lessons: [
-    ["Project Setup", "VIDEO", 30, 1, false, false],
-    ["Authentication", "VIDEO", 40, 2, false, false],
-    ["CRUD Operations", "VIDEO", 35, 3, false, false],
-    ["Deployment", "VIDEO", 20, 4, false, false],
-  ]},
+  {
+    title: "Getting Started", order: 1, lessons: [
+      ["Course Introduction", "VIDEO", 10, 1, true, true],
+      ["Setting Up Your Dev Environment", "VIDEO", 15, 2, true, false],
+      ["Understanding React Fundamentals", "TEXT", 20, 3, false, false],
+      ["Your First React Component", "VIDEO", 25, 4, false, false],
+    ]
+  },
+  {
+    title: "React Core Concepts", order: 2, lessons: [
+      ["JSX Deep Dive", "VIDEO", 20, 1, false, false],
+      ["Props and State", "VIDEO", 30, 2, false, false],
+      ["Event Handling", "VIDEO", 18, 3, false, false],
+      ["Conditional Rendering", "VIDEO", 15, 4, false, false],
+      ["Lists and Keys", "VIDEO", 22, 5, false, false],
+    ]
+  },
+  {
+    title: "React Hooks", order: 3, lessons: [
+      ["useState and useEffect", "VIDEO", 35, 1, false, false],
+      ["useContext", "VIDEO", 25, 2, false, false],
+      ["Custom Hooks", "VIDEO", 28, 3, false, false],
+    ]
+  },
+  {
+    title: "Next.js Fundamentals", order: 4, lessons: [
+      ["Introduction to Next.js", "VIDEO", 15, 1, false, false],
+      ["File-based Routing", "VIDEO", 25, 2, false, false],
+      ["Server vs Client Components", "VIDEO", 30, 3, false, false],
+      ["Data Fetching", "VIDEO", 35, 4, false, false],
+    ]
+  },
+  {
+    title: "Building a Full-Stack App", order: 5, lessons: [
+      ["Project Setup", "VIDEO", 30, 1, false, false],
+      ["Authentication", "VIDEO", 40, 2, false, false],
+      ["CRUD Operations", "VIDEO", 35, 3, false, false],
+      ["Deployment", "VIDEO", 20, 4, false, false],
+    ]
+  },
 ];
 
 const firstSectionLessonIds = [];
@@ -376,7 +386,7 @@ const frontendQuizSeeds = [
       ["Which CSS property changes text color?", "MULTIPLE_CHOICE", '["font-weight","color","background-image","display"]', "color", "The color property sets the foreground text color."],
       ["Which tag is the correct HTML5 document type declaration?", "MULTIPLE_CHOICE", '["<!DOCTYPE html>","<doctype HTML5>","<html doctype>","<!HTML>"]', "<!DOCTYPE html>", "HTML5 uses the short <!DOCTYPE html> declaration."],
       ["VS Code is primarily used as a:", "MULTIPLE_CHOICE", '["Web browser","Code editor / IDE for writing code","Database server","CSS framework"]', "Code editor / IDE for writing code", "Visual Studio Code is a popular code editor for web development."],
-      ["Which selector targets an element with id=\\"hero\\"?", "MULTIPLE_CHOICE", '[".hero","#hero","hero","*hero"]', "#hero", "IDs are selected with a hash (#) in CSS."],
+      ['Which selector targets an element with id="hero"?', "MULTIPLE_CHOICE", '[".hero","#hero","hero","*hero"]', "#hero", "IDs are selected with a hash (#) in CSS."],
     ],
   },
   {
@@ -458,7 +468,7 @@ const htmlQuizSeeds = [
     questions: [
       ["What does HTML stand for?", "MULTIPLE_CHOICE", '["HyperText Markup Language","High Transfer Machine Language","Hyperlink Text Managing Library","Home Tool Markup Logic"]', "HyperText Markup Language", "HTML is the standard markup language for web pages."],
       ["Which tag creates the largest default heading?", "MULTIPLE_CHOICE", '["<h6>","<h1>","<head>","<header>"]', "<h1>", "Heading levels go from h1 (largest) to h6 (smallest)."],
-      ["Which tag is used to create a hyperlink?", "MULTIPLE_CHOICE", '["<link>","<a>","<href>","<url>"]', "<a>", "Anchor tags (<a href=\\"...\\">) create links."],
+      ["Which tag is used to create a hyperlink?", "MULTIPLE_CHOICE", '["<link>","<a>","<href>","<url>"]', "<a>", "Anchor tags (<a href='...'>) create links."],
       ["Where should the main visible page content be placed?", "MULTIPLE_CHOICE", '["Inside the <head> element","Inside the <body> element","Inside a <style> tag only","Inside the DOCTYPE line"]', "Inside the <body> element", "Visible content belongs in <body>; metadata goes in <head>."],
       ["Which attribute provides alternative text for an image?", "MULTIPLE_CHOICE", '["src","href","alt","title only"]', "alt", "alt describes the image for accessibility and when images fail to load."],
     ],
@@ -471,7 +481,7 @@ const htmlQuizSeeds = [
       ["A complete HTML document should start with:", "MULTIPLE_CHOICE", '["<!DOCTYPE html>","<start html>","<?html>","<document>"]', "<!DOCTYPE html>", "The DOCTYPE tells the browser to use HTML5 standards mode."],
       ["Which element groups paragraphs of text?", "MULTIPLE_CHOICE", '["<p>","<span> only","<img>","<br> only"]', "<p>", "<p> marks a paragraph block of text."],
       ["The <ul> element is used for:", "MULTIPLE_CHOICE", '["Unordered (bulleted) lists","Only numbered lists","Embedding videos","Defining CSS variables"]', "Unordered (bulleted) lists", "<ul> + <li> creates a bulleted list; <ol> is ordered."],
-      ["Which tag embeds an image?", "MULTIPLE_CHOICE", '["<image>","<img>","<pic>","<media>"]', "<img>", "Use <img src=\\"...\\" alt=\\"...\\"> to show images."],
+      ["Which tag embeds an image?", "MULTIPLE_CHOICE", '["<image>","<img>","<pic>","<media>"]', "<img>", "Use <img src='...' alt='...'> to show images."],
       ["Why structure pages with semantic tags like <header>, <main>, and <footer>?", "MULTIPLE_CHOICE", '["They replace CSS completely","They improve meaning, accessibility, and document structure","They are required for JavaScript to run","They encrypt form data"]', "They improve meaning, accessibility, and document structure", "Semantic HTML clarifies structure for browsers, assistive tech, and maintainers."],
     ],
   },

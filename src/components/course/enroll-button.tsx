@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { GraduationCap, PlayCircle, CheckCircle, Loader2 } from "lucide-react";
+import { ChapaPaymentModal } from "@/components/course/chapa-payment-modal";
 
 interface EnrollButtonProps {
   courseId: string;
@@ -23,10 +24,12 @@ interface EnrollButtonProps {
 
 export function EnrollButton({
   courseId,
+  courseSlug,
   isFree,
   isEnrolled,
   enrollmentStatus,
   firstLessonId,
+  price,
   formattedPrice,
   className,
   size = "lg",
@@ -36,6 +39,7 @@ export function EnrollButton({
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [chapaOpen, setChapaOpen] = useState(false);
 
   const goToLearn = () => {
     if (firstLessonId) {
@@ -85,6 +89,12 @@ export function EnrollButton({
       return;
     }
 
+    // If it's a paid course, launch the Chapa payment modal!
+    if (!isFree) {
+      setChapaOpen(true);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -130,6 +140,15 @@ export function EnrollButton({
       {error && (
         <p className="text-xs text-red-400 mt-2 text-center">{error}</p>
       )}
+
+      <ChapaPaymentModal
+        isOpen={chapaOpen}
+        onClose={() => setChapaOpen(false)}
+        courseId={courseId}
+        courseTitle={courseSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+        price={price || 0}
+        formattedPrice={formattedPrice}
+      />
     </div>
   );
 }

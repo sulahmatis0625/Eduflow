@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -749,10 +750,11 @@ export default function CreateCourseWizardPage() {
         }
       }
 
+      const targetStatus = isAdmin ? "PUBLISHED" : "PENDING";
       const pubRes = await fetch(`/api/courses/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "PUBLISHED" }),
+        body: JSON.stringify({ status: targetStatus }),
       });
       const pubData = await pubRes.json();
       if (!pubRes.ok) {
@@ -760,7 +762,11 @@ export default function CreateCourseWizardPage() {
       }
 
       setCourseSlug(pubData.slug || courseSlug);
-      toast("success", "Course published! Students can find it now.");
+      if (isAdmin) {
+        toast("success", "Course published directly! Students can find it now.");
+      } else {
+        toast("success", "Course submitted for review! It will be live once approved by an Admin.");
+      }
       pushWizardState(5);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Publish failed");
@@ -1473,7 +1479,7 @@ export default function CreateCourseWizardPage() {
                 </Button>
                 <Button onClick={() => void publishCourse()} isLoading={busy}>
                   <Rocket className="h-4 w-4 mr-2" />
-                  Publish course
+                  {isAdmin ? "Publish course" : "Submit for review"}
                 </Button>
               </div>
             </div>
@@ -1487,10 +1493,13 @@ export default function CreateCourseWizardPage() {
             <div className="mx-auto h-14 w-14 rounded-full bg-brand/15 flex items-center justify-center">
               <Check className="h-7 w-7 text-brand" />
             </div>
-            <h2 className="text-xl font-bold text-text-primary">Course published!</h2>
+            <h2 className="text-xl font-bold text-text-primary">
+              {isAdmin ? "Course published!" : "Course submitted for review!"}
+            </h2>
             <p className="text-sm text-text-secondary max-w-md mx-auto">
-              Your course is live with {chapters.filter((c) => c.lessons.length).length}{" "}
-              chapters. Students can find it on the Courses page.
+              {isAdmin
+                ? `Your course is live with ${chapters.filter((c) => c.lessons.length).length} chapters. Students can find it on the Courses page.`
+                : `Your course with ${chapters.filter((c) => c.lessons.length).length} chapters has been submitted to the Admin team. Once approved, it will be published to the public catalog.`}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
               {courseId && (

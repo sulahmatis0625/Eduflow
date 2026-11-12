@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
-import { BookOpen, CheckCircle, Archive, Eye, Search } from "lucide-react";
+import { BookOpen, CheckCircle, Archive, Eye, Search, XCircle, ExternalLink } from "lucide-react";
 import { Input } from "@/components/ui/input";
    import Link from "next/link";
 
@@ -234,18 +234,41 @@ export default function AdminCoursesPage() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           {course.status === "PENDING" && (
-                            <Button
-                              size="sm"
-                              variant="success"
-                              onClick={() =>
-                                updateCourseStatus(course.id, "PUBLISHED")
-                              }
-                              isLoading={actionLoading === course.id}
-                              disabled={actionLoading === course.id}
-                            >
-                              <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                              Approve
-                            </Button>
+                            <>
+                              <Link
+                                href={`/courses/${course.slug}`}
+                                target="_blank"
+                              >
+                                <Button size="sm" variant="outline" title="Preview course">
+                                  <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                                  Preview
+                                </Button>
+                              </Link>
+                              <Button
+                                size="sm"
+                                variant="success"
+                                onClick={() =>
+                                  updateCourseStatus(course.id, "PUBLISHED")
+                                }
+                                isLoading={actionLoading === course.id}
+                                disabled={actionLoading === course.id}
+                              >
+                                <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onClick={() =>
+                                  updateCourseStatus(course.id, "DRAFT")
+                                }
+                                isLoading={actionLoading === course.id}
+                                disabled={actionLoading === course.id}
+                              >
+                                <XCircle className="h-3.5 w-3.5 mr-1" />
+                                Reject
+                              </Button>
+                            </>
                           )}
                           {course.status === "DRAFT" && (
                             <Button

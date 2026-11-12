@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, getSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,10 @@ function LoginForm() {
     }
 
     // After credentials sign-in, claim free trial (if any) then land on My Courses
-    if (isTrial) {
+    const session = await getSession();
+    if (session?.user?.role === "ADMIN") {
+      router.push("/admin");
+    } else if (isTrial) {
       // Brief pause so the session cookie is available to the enroll API
       await new Promise((r) => setTimeout(r, 150));
       try {

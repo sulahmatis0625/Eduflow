@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { cn, getLevelFromXp, getXpProgress } from "@/lib/utils";
 import {
-  LayoutDashboard, BookOpen, Trophy, Award, Settings,
+  LayoutDashboard,
+  Shield, BookOpen, Trophy, Award, Settings,
   GraduationCap, Bell, BarChart3,
   Plus, UserPlus,
   X, PanelLeftClose, PanelLeftOpen,

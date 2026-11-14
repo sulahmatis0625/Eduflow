@@ -162,7 +162,9 @@ export default function CreateCourseWizardPage() {
   const [finalAssessment, setFinalAssessment] = useState<AssessmentDraft>(
     emptyAssessment("Final Exam")
   );
-
+ const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
+  
   const stepRef = useRef(step);
   const modeRef = useRef(contentMode);
   stepRef.current = step;
